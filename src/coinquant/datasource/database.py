@@ -108,7 +108,7 @@ class dataBase:
 def test():
     db = dataBase(settings.path.db_path)
     print(db.count())
-    print(db.query(symbol="BTCUSDT"))
-    print(db.time_range("1m"))
+    print(db.query(symbol="BTC/USDT"))
+    print(db.time_range("15m"))
 
-test()
+# test()
