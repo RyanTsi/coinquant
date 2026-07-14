@@ -1,9 +1,12 @@
+import logging
 from enum import Enum
 from typing import List
+
 from coinquant.datasource.database import dataBase
 from coinquant.datasource.ccxt_source import fetch_ohlcv, convert_datetime_to_timestamp
 from coinquant.config import settings
-import logging
+
+logger = logging.getLogger(__name__)
 
 
 class FetchMode(str, Enum):
@@ -29,7 +32,7 @@ class FetchHandler:
 
     def _fetch_incremental(self):
         # Logic to fetch only missing data
-        logging.info("Fetching incremental data...")
+        logger.info("Fetching incremental data...")
         
         
         for period in settings.data.period_list:
@@ -42,7 +45,7 @@ class FetchHandler:
 
     def _fetch_full(self):
         # Logic to fetch all data for the specified range
-        logging.info("Fetching full data...")
+        logger.info("Fetching full data...")
         for symbol in settings.data.coin_list:
             for period in settings.data.period_list:
                 data = fetch_ohlcv(symbol, period, convert_datetime_to_timestamp(settings.data.begin_date))

@@ -1,9 +1,13 @@
-import typer
+import logging
 from typing import Annotated
+
+import typer
+
 from coinquant.handler.fetch_handler import FetchMode, FetchHandler
 from coinquant.config import settings
 
 app = typer.Typer(help="BTC quantitative research command line tools.")
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 @app.command(help="fetch historical data")
 def fetch(
@@ -22,6 +26,7 @@ def hello(name: Annotated[str, typer.Option("--name", "-n", help="Your name")]):
 
 def main() -> None:
     """Run the Typer application."""
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, force=True)
     app()
 
 
