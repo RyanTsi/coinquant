@@ -3,11 +3,7 @@ from enum import Enum
 from typing import List
 
 from coinquant.datasource.database import dataBase
-from coinquant.datasource.ccxt_source import (
-    convert_datetime_to_timestamp,
-    fetch_ohlcv,
-    iter_ohlcv_batches,
-)
+from coinquant.datasource.ccxt_source import ccxtSourceFetcher
 from coinquant.config import settings
 
 logger = logging.getLogger(__name__)
@@ -26,8 +22,8 @@ class FetchHandler:
     def __init__(self, mode: FetchMode):
         self._mode = mode
         self._db = dataBase(settings.path.db_path)
-        self._begin_time = convert_datetime_to_timestamp(settings.data.begin_date)
-        self._end_time = convert_datetime_to_timestamp(settings.data.end_date)
+        self._begin_time = settings.data.begin_date
+        self._end_time = settings.data.end_date
 
     def fetch(self):
         if self._mode == FetchMode.incremental:
@@ -51,7 +47,8 @@ class FetchHandler:
         logger.info("Fetching full data...")
         for symbol in settings.data.coin_list:
             for period in settings.data.period_list:
-                self._fetch_and_store(symbol, period, self._begin_time)
+                total_rows = self._fetch_and_store(symbol, period, self._begin_time)
+                logger.info(f"{total_rows} rows fetched for {symbol} at {period}")
 
     def _fetch_and_store(self, symbol: str, period: str, begin_time: int) -> int:
         if begin_time > self._end_time:
@@ -62,24 +59,17 @@ class FetchHandler:
             )
             return 0
 
-        total_rows = 0
-        
-        for data in iter_ohlcv_batches(symbol, period, begin_time, self._end_time):
-            stored_rows = self._store_data(symbol, period, data)
-            total_rows += stored_rows
-            logger.info(
-                "Stored %s rows for %s %s",
-                stored_rows,
-                symbol,
-                period,
-            )
-        logger.info("Finished %s %s: %s rows", symbol, period, total_rows)
+        fetcher = ccxtSourceFetcher()
+        data = fetcher.fetch_ohlcv(symbol, period, begin_time)
+        total_rows = self._store_data(symbol, period, data)
         return total_rows
 
     def _store_data(self, symbol: str, period: str, data: List[list]) -> int:
         # Logic to store fetched data into the database
-        rows = [[symbol, period, *row] for row in data]
-        return self._db.insert_rows(rows)
+        for row in data:
+            row.insert(0, symbol)  # Insert symbol at the beginning
+            row.insert(1, period)  # Insert period after symbol
+        self._db.insert_rows(data)
 
 
 def test():
