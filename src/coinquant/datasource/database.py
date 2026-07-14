@@ -95,16 +95,28 @@ class dataBase:
             ).fetchall()
         return result
 
-    def time_range(self, period: str) -> tuple[int | None, int | None]:
-        """Return (min_open_time, max_open_time) for a period."""
-        result = self._conn.execute(
-            "SELECT MIN(open_time), MAX(open_time) FROM klines WHERE period = ?",
-            [period],
-        ).fetchone()
+    def time_range(
+        self,
+        period: str,
+        symbol: str | None = None,
+    ) -> tuple[int | None, int | None]:
+        """Return (min_open_time, max_open_time) for a period and optional symbol."""
+        if symbol is None:
+            result = self._conn.execute(
+                "SELECT MIN(open_time), MAX(open_time) FROM klines WHERE period = ?",
+                [period],
+            ).fetchone()
+        else:
+            result = self._conn.execute(
+                "SELECT MIN(open_time), MAX(open_time) FROM klines "
+                "WHERE period = ? AND symbol = ?",
+                [period, symbol],
+            ).fetchone()
         if not result:
             return None, None
         return result[0], result[1]
-    
+
+
 def test():
     db = dataBase(settings.path.db_path)
     print(db.count())
