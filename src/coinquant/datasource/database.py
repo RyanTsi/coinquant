@@ -1,6 +1,7 @@
-from typing import Any
+from collections.abc import Iterable, Sequence
 
 import duckdb
+import pandas as pd
 from pathlib import Path
 from coinquant.config import settings
 
@@ -39,16 +40,42 @@ class dataBase:
     def create_table(self):
         self._conn.execute(_CREATE_TABLE_SQL)
 
-    def insert_rows(self, rows: list[tuple[Any, ...]]) -> int:
+    def insert_rows(
+        self,
+        rows: Iterable[Sequence[object]],
+        batch_size: int = 10_000,
+    ) -> int:
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
+
+        total_rows = 0
+        batch: list[Sequence[object]] = []
+        for row in rows:
+            batch.append(row)
+            if len(batch) >= batch_size:
+                total_rows += self._insert_batch(batch)
+                batch.clear()
+
+        if batch:
+            total_rows += self._insert_batch(batch)
+        return total_rows
+
+    def _insert_batch(self, rows: Sequence[Sequence[object]]) -> int:
         if not rows:
             return 0
-        self._conn.executemany(
-            f"""
-            INSERT OR REPLACE INTO klines ({", ".join(KLINE_COLUMNS)})
-            VALUES ({", ".join("?" for _ in KLINE_COLUMNS)})
-            """,
-            rows,
-        )
+
+        frame = pd.DataFrame.from_records(rows, columns=KLINE_COLUMNS)
+        self._conn.register("_kline_rows", frame)
+        try:
+            self._conn.execute(
+                f"""
+                INSERT OR REPLACE INTO klines ({", ".join(KLINE_COLUMNS)})
+                SELECT {", ".join(KLINE_COLUMNS)}
+                FROM _kline_rows
+                """
+            )
+        finally:
+            self._conn.unregister("_kline_rows")
         return len(rows)
 
     def count(self, period: str | None = None, symbol: str | None = None) -> int:

@@ -2,7 +2,8 @@
     "path": {
         "data_path": "data",
         "raw_data_path": "data/raw",
-        "db_path": "data/db.ducksdb"
+        "db_path": "data/db.ducksdb",
+        "sample_path": "data/sample"
     },
     "data": {
         "coin_list": [

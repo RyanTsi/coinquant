@@ -1,9 +1,8 @@
 import logging
 from enum import Enum
-from typing import List
 
 from coinquant.datasource.database import dataBase
-from coinquant.datasource.ccxt_source import ccxtSourceFetcher
+from coinquant.datasource.ccxt_source import ccxtSourceFetcher, timeframe_to_milliseconds
 from coinquant.config import settings
 
 logger = logging.getLogger(__name__)
@@ -34,6 +33,10 @@ class FetchHandler:
         else:
             raise ValueError(f"Unsupported fetch mode: {self._mode}")
 
+    def count(self) -> int:
+        """Count the number of rows in the database."""
+        return self._db.count()
+
     def _fetch_incremental(self):
         # Logic to fetch only missing data
         logger.info("Fetching incremental data...")
@@ -41,7 +44,8 @@ class FetchHandler:
             for symbol in settings.data.coin_list:
                 (_, max_time) = self._db.time_range(period, symbol)
                 begin_time = max_time if max_time is not None else self._begin_time
-                self._fetch_and_store(symbol, period, begin_time)
+                total_rows = self._fetch_and_store(symbol, period, begin_time)
+                logger.info(f"{total_rows} rows fetched for {symbol} at {period}")
 
     def _fetch_full(self):
         # Logic to fetch all data for the specified range
@@ -51,8 +55,16 @@ class FetchHandler:
                 total_rows = self._fetch_and_store(symbol, period, self._begin_time)
                 logger.info(f"{total_rows} rows fetched for {symbol} at {period}")
 
-    def _fetch_and_store(self, symbol: str, period: str, begin_time: int) -> int:
-        if begin_time > self._end_time:
+    def _fetch_and_store(
+        self,
+        symbol: str,
+        period: str,
+        begin_time: str | int | float,
+    ) -> int:
+        begin_timestamp = self._fetcher.convert_datetime_to_timestamp(begin_time)
+        end_timestamp = self._fetcher.convert_datetime_to_timestamp(self._end_time)
+
+        if begin_timestamp > end_timestamp:
             logger.info(
                 "Skipping %s %s because begin_time is after end_date",
                 symbol,
@@ -60,16 +72,21 @@ class FetchHandler:
             )
             return 0
 
-        data = self._fetcher.fetch_ohlcv(symbol, period, begin_time)
-        total_rows = self._store_data(symbol, period, data)
+        total_rows = 0
+        for candles in self._fetcher.fetch_ohlcv_pages(
+            symbol,
+            period,
+            begin_timestamp,
+            end_timestamp,
+        ):
+            total_rows += self._store_data(symbol, period, candles)
         return total_rows
 
-    def _store_data(self, symbol: str, period: str, data: List[list]) -> int:
+    def _store_data(self, symbol: str, period: str, data: list[list]) -> int:
         # Logic to store fetched data into the database
-        for row in data:
-            row.insert(0, symbol)  # Insert symbol at the beginning
-            row.insert(1, period)  # Insert period after symbol
-        self._db.insert_rows(data)
+        rows = ((symbol, period, *row) for row in data)
+        return self._db.insert_rows(rows)
+    
 
 
 def test():
