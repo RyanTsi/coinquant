@@ -102,23 +102,41 @@ class dataBase:
             ).fetchone()
             return int(result[0]) if result else 0
 
-    def query(self, period: str | None = None, symbol: str | None = None, start_time: int = 0) -> list[tuple]:
+    def query(
+        self,
+        period: str | None = None,
+        symbol: str | None = None,
+        start_time: int = 0,
+        end_time: int = 2556115199000,
+    ) -> list[tuple]:
         if period is None and symbol is None:
-            result = self._conn.execute("SELECT * FROM klines").fetchall()
+            result = self._conn.execute(
+                "SELECT * FROM klines "
+                "WHERE open_time >= ? AND open_time <= ? "
+                "ORDER BY symbol, period, open_time",
+                [start_time, end_time],
+            ).fetchall()
         elif period is None and symbol is not None:
             result = self._conn.execute(
-                "SELECT * FROM klines WHERE symbol = ? AND open_time >= ?",
-                [symbol, start_time],
+                "SELECT * FROM klines "
+                "WHERE symbol = ? AND open_time >= ? AND open_time <= ? "
+                "ORDER BY period, open_time",
+                [symbol, start_time, end_time],
             ).fetchall()
         elif period is not None and symbol is None:
             result = self._conn.execute(
-                "SELECT * FROM klines WHERE period = ? AND open_time >= ?",
-                [period, start_time],
+                "SELECT * FROM klines "
+                "WHERE period = ? AND open_time >= ? AND open_time <= ? "
+                "ORDER BY symbol, open_time",
+                [period, start_time, end_time],
             ).fetchall()
         else:
             result = self._conn.execute(
-                "SELECT * FROM klines WHERE period = ? AND symbol = ? AND open_time >= ?",
-                [period, symbol, start_time],
+                "SELECT * FROM klines "
+                "WHERE period = ? AND symbol = ? "
+                "AND open_time >= ? AND open_time <= ? "
+                "ORDER BY open_time",
+                [period, symbol, start_time, end_time],
             ).fetchall()
         return result
 

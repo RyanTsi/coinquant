@@ -32,7 +32,7 @@ def export(
     symbol: Annotated[
         str,
         typer.Option("--symbol", "-s", help="导出的合约种类"),
-    ] = "BTCUSDT",
+    ] = "BTC/USDT",
     period: Annotated[
         str,
         typer.Option("--period", "-p", help="导出周期"),
@@ -40,9 +40,20 @@ def export(
     begin: Annotated[
         str,
         typer.Option("--begin", help="开始时间"),
-    ] = "2020-01-01T00:00:00Z"
+    ] = "2020-01-01T00:00:00Z",
+    end: Annotated[
+        str,
+        typer.Option("--end", help="结束时间"),
+    ] = settings.data.end_date,
 ):
-    export_samples_to_csv(settings.path.db_path, settings.path.sample_path, symbol, period, begin)
+    export_samples_to_csv(
+        settings.path.db_path,
+        settings.path.sample_path,
+        symbol,
+        period,
+        begin,
+        end,
+    )
 
 def main() -> None:
     """Run the Typer application."""
