@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timezone
 from functools import lru_cache
 import ccxt
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class ccxtSourceFetcher:
             all_data.extend(candles)
             since = candles[-1][0] + timeframe_to_milliseconds(timeframe)
             logger.info(f"Fetched {len(candles)} candles for {symbol} at {timeframe}, next since: {since}")
+            time.sleep(0.2)
         return all_data
 
 def test():

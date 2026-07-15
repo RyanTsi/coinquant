@@ -24,6 +24,7 @@ class FetchHandler:
         self._db = dataBase(settings.path.db_path)
         self._begin_time = settings.data.begin_date
         self._end_time = settings.data.end_date
+        self._fetcher = ccxtSourceFetcher()
 
     def fetch(self):
         if self._mode == FetchMode.incremental:
@@ -59,8 +60,7 @@ class FetchHandler:
             )
             return 0
 
-        fetcher = ccxtSourceFetcher()
-        data = fetcher.fetch_ohlcv(symbol, period, begin_time)
+        data = self._fetcher.fetch_ohlcv(symbol, period, begin_time)
         total_rows = self._store_data(symbol, period, data)
         return total_rows
 
