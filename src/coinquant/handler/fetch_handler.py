@@ -1,7 +1,7 @@
 import logging
 from enum import Enum
 
-from coinquant.datasource.database import dataBase
+from coinquant.datasource.database import DataBase
 from coinquant.datasource.ccxt_source import ccxtSourceFetcher, timeframe_to_milliseconds
 from coinquant.config import settings
 
@@ -20,7 +20,7 @@ class FetchHandler:
 
     def __init__(self, mode: FetchMode):
         self._mode = mode
-        self._db = dataBase(settings.path.db_path)
+        self._db = DataBase()
         self._begin_time = settings.data.begin_date
         self._end_time = settings.data.end_date
         self._fetcher = ccxtSourceFetcher()

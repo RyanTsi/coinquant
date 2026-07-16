@@ -30,8 +30,8 @@ CREATE TABLE IF NOT EXISTS klines (
 );
 """
 
-class dataBase:
-    def __init__(self, db_path):
+class DataBase:
+    def __init__(self, db_path = settings.path.db_path):
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = duckdb.connect(db_path)
@@ -163,7 +163,7 @@ class dataBase:
 
 
 def test():
-    db = dataBase(settings.path.db_path)
+    db = DataBase(settings.path.db_path)
     print(db.count())
     print(db.query(symbol="BTC/USDT"))
     print(db.time_range("15m"))

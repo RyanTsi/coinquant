@@ -10,6 +10,12 @@ from coinquant.config import settings
 app = typer.Typer(help="BTC quantitative research command line tools.")
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
+@app.command(help="database staust")
+def staust():
+    handler = FetchHandler(FetchMode.incremental)
+    count = handler.count()
+    print(f"totle rows: {count}")
+
 @app.command(help="fetch historical data")
 def fetch(
     mode: Annotated[
@@ -19,13 +25,6 @@ def fetch(
 ):
     handler = FetchHandler(mode)
     handler.fetch()
-
-@app.command(help="hello")
-def hello(name: Annotated[str, typer.Option("--name", "-n", help="Your name")]):
-    handler = FetchHandler(FetchMode.incremental)
-    count = handler.count()
-    typer.echo(f"Hello {name}!")
-    typer.echo(f"Database row count: {count}")
 
 @app.command(help="export historical data to CSV")
 def export(
@@ -47,7 +46,6 @@ def export(
     ] = settings.data.end_date,
 ):
     export_samples_to_csv(
-        settings.path.db_path,
         settings.path.sample_path,
         symbol,
         period,
@@ -59,7 +57,6 @@ def main() -> None:
     """Run the Typer application."""
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, force=True)
     app()
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -19,5 +19,9 @@
         ],
         "begin_date": "2020-01-01T00:00:00Z",
         "end_date": "2030-12-31T23:59:59Z"
+    },
+    "data_set": {
+        "rolling_window": 128,
+        "future_length": 4
     }
 }

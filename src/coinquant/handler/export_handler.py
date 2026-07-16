@@ -3,19 +3,18 @@ from pathlib import Path
 import pandas as pd
 
 from coinquant.config import settings
-from coinquant.datasource.database import KLINE_COLUMNS, dataBase
+from coinquant.datasource.database import KLINE_COLUMNS, DataBase
 from coinquant.utils import convert_datetime_to_timestamp
 
 
 def export_samples_to_csv(
-    db_path: str,
     output_dir: str,
     symbol: str | None = None,
     period: str | None = None,
     begin_time: str = settings.data.begin_date,
     end_time: str = settings.data.end_date,
 ) -> None:
-    db = dataBase(db_path)
+    db = DataBase()
     data = db.query(
         period,
         symbol,
