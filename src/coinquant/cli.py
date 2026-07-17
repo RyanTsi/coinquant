@@ -53,6 +53,19 @@ def export(
         end,
     )
 
+@app.command(help="train transformer model")
+def train_transformer(
+    symbol: Annotated[
+        str,
+        typer.Option("--symbol", "-s", help="训练的合约种类"),
+    ] = "BTC/USDT",
+    period: Annotated[
+        str,
+        typer.Option("--period", "-p", help="训练周期"),
+    ] = "4h",
+):
+    pass
+
 def main() -> None:
     """Run the Typer application."""
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, force=True)
