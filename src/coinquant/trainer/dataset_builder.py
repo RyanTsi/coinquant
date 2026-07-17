@@ -38,11 +38,13 @@ class DatasetBuilder:
         df['feat_ret_close'] = 100 * (df['close'] / df['open'] - 1)
         for ma_window in [20, 50, 100, 200]:
             df[f'ma{ma_window}'] = df['close'].rolling(ma_window).mean()
-            df[f'feat_ma{ma_window}'] = 100 * (df[f'ma{ma_window}'] / df['open'] - 1)
+            df[f'ma{ma_window}_slope'] = df[f'ma{ma_window}'].pct_change()
+            self._z_rolling_score(df, f'ma{ma_window}_slope')
+            # df[f'feat_ma{ma_window}'] = 100 * (df[f'ma{ma_window}'] / df['open'] - 1)
         df['log_open']  = np.log(df['open'])
         df['log1p_volume'] = np.log(df['volume'])
-        self._z_rolling_score(df, "log_open")
-        self._z_rolling_score(df, "log1p_volume")
+        self._z_rolling_score(df, 'log_open')
+        self._z_rolling_score(df, 'log1p_volume')
         df = df.dropna()
         return df
 
@@ -56,7 +58,7 @@ class DatasetBuilder:
             df['label_close_short'] += short_weight * df['feat_ret_close'].shift(-i)
             short_weight *= self._short_rate
 
-        for i in range(1, self._future_length * self._future_length + 1):
+        for i in range(1, self._future_length ** 2 + 1):
             df['label_close_long'] += long_weight * df['feat_ret_close'].shift(-i)
             long_weight *= self._long_rate
 
@@ -89,9 +91,9 @@ class DatasetBuilder:
         }
 
     def _trim_future_boundary(self, df):
-        if len(df) <= self._future_length:
+        if len(df) <= self._future_length ** 2:
             return df.iloc[:0].copy()
-        return df.iloc[:-self._future_length].dropna(subset=["label_mean_close"]).copy()
+        return df.iloc[:-self._future_length ** 2].dropna(subset=["label_close_long"]).copy()
 
 def test():
     datasetBuilder = DatasetBuilder("BTC/USDT", "4h")
@@ -102,4 +104,4 @@ def test():
         df.to_csv(f"{name}.csv")
         print(name, len(df))
 
-# test()
+test()
