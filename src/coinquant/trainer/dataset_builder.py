@@ -98,7 +98,7 @@ class DatasetBuilder:
 def test():
     datasetBuilder = DatasetBuilder("BTC/USDT", "4h")
     all_dp = datasetBuilder.build_from_db()
-    all_dp.to_csv("totle.csv")
+    all_dp.to_csv("total.csv")
     splits = datasetBuilder.build_splits_from_db()
     for name, df in splits.items():
         df.to_csv(f"{name}.csv")

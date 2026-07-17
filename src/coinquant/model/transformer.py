@@ -44,7 +44,6 @@ class TransformerModel(BaseModel):
         self.batch_size = batch_size
         self.early_stop = early_stop
         self.optimizer = optimizer.lower()
-        self.loss = loss
         self.n_jobs = n_jobs
         self.device = torch.device("cuda:%d" % GPU if torch.cuda.is_available() and GPU >= 0 else "cpu")
         self.seed = seed
@@ -54,14 +53,16 @@ class TransformerModel(BaseModel):
             np.random.seed(self.seed)
             torch.manual_seed(self.seed)
 
-        self.model = Transformer(d_feat, d_model, nhead, num_layers, dropout, self.device)
+        self.model = Transformer(d_feat, d_linear, d_model, nhead, num_layers, dropout, self.device)
+
         if optimizer.lower() == "adam":
             self.train_optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.reg)
         elif optimizer.lower() == "gd":
             self.train_optimizer = optim.SGD(self.model.parameters(), lr=self.lr, weight_decay=self.reg)
         else:
             raise NotImplementedError("optimizer {} is not supported!".format(optimizer))
-
+        
+        self.criterion = nn.MSELoss()
         self.fitted = False
         self.model.to(self.device)
 
@@ -69,37 +70,101 @@ class TransformerModel(BaseModel):
     def use_gpu(self):
         return self.device != torch.device("cpu")
 
-    def mse(self, pred, label):
-        loss = (pred.float() - label.float()) ** 2
-        return torch.mean(loss)
+    def train_epoch(self, data_loader):
+        self.model.train()
+        for feature, label in data_loader:
+            feature = feature.to(self.device)
+            label = label.to(self.device)
 
-    def loss_fn(self, pred, label):
-        mask = ~torch.isnan(label)
+            pred = self.model(feature.float())  # .float()
+            loss = self.criterion(pred, label)
 
-        if self.loss == "mse":
-            return self.mse(pred[mask], label[mask])
+            self.train_optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_value_(self.model.parameters(), 3.0)
+            self.train_optimizer.step()
 
-        raise ValueError("unknown loss `%s`" % self.loss)
+    def test_epoch(self, data_loader):
+        self.model.eval()
+        total_loss = 0
 
-    def metric_fn(self, pred, label):
-        mask = torch.isfinite(label)
+        with torch.no_grad():
 
-        if self.metric in ("", "loss"):
-            return -self.loss_fn(pred[mask], label[mask])
+            for feature, label in data_loader:
+                feature = feature.to(self.device)
+                label = label.to(self.device)
 
-        raise ValueError("unknown metric `%s`" % self.metric)
+                pred = self.model(feature.float()) # .float()
+                loss = self.criterion(pred, label)
+
+                total_loss += loss.item()
+
+        return total_loss / len(data_loader)
 
     def fit(
         self,
-        dataset: Dataset,
+        train_loader,
+        valid_loader,
         evals_result=dict(),
         save_path=None,
     ):
+        stop_steps = 0
+        best_loss = np.inf
+        evals_result['train'] = []
+        evals_result['val']   = []
+
+        # train
+        logger.info("training...")
+        self.fitted = True
+
+        for step in range(self.n_epochs):
+            logger.info("Epoch%d:", step)
+            logger.info("training...")
+            self.train_epoch(train_loader)
+            logger.info("evaluating...")
+            train_loss = self.test_epoch(train_loader)
+            val_loss = self.test_epoch(valid_loader)
+            logger.info("train %.6f, valid %.6f" % (train_loss, val_loss))
+            evals_result["train"].append(train_loss)
+            evals_result["valid"].append(val_loss)
+
+            if val_loss < best_loss:
+                best_loss = val_loss
+                stop_steps = 0
+                best_epoch = step
+                best_param = copy.deepcopy(self.model.state_dict())
+            else:
+                stop_steps += 1
+                if stop_steps >= self.early_stop:
+                    logger.info("early stop")
+                    break
+        
+        logger.info("best loss: %.6lf @ %d" % (best_loss, best_epoch))
+        self.model.load_state_dict(best_param)
+        torch.save(best_param, save_path)
+
         if self.use_gpu:
             torch.cuda.empty_cache()
 
     def predict(self, dataset):
-        pass
+        if not self.fitted:
+            raise ValueError("model is not fitted yet!")
+
+    def save(self, path):
+        torch.save(
+            self.model.state_dict(),
+            path,
+        )
+    
+    def load(self, path):
+        state = torch.load(
+            path,
+            map_location=self.device,
+        )
+
+        self.model.load_state_dict(state)
+
+        self.fitted = True
 
 
 

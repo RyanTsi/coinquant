@@ -1,11 +1,14 @@
 import abc
-import torch.nn as nn
 
-class BaseModel(nn.Module, abc.ABC):
-
-    def __init__(self):
-        super().__init__()
+class BaseModel(abc.ABC):
 
     @abc.abstractmethod
-    def forward(self, x):
+    def fit(self, train_loader, valid_loader):
         pass
+
+    @abc.abstractmethod
+    def predict(self, data_loader):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        return self.predict(*args, **kwargs)
