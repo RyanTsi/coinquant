@@ -1,9 +1,14 @@
+# BTC 量化交易平台
+
+## 数据处理
 | 数据             | 推荐处理                      |
 | -------------- | ------------------------- |
 | Price(Open)    | `log` → Rolling Z-score   |
 | High/Low/Close | 转成相对 Open 收益率，不再做 log     |
 | Volume         | `log1p` → Rolling Z-score |
+| MA | MA-slope -> Rolling Z-score |
 
+## 回测验证指标
 | 指标                   | 含义          | 为什么重要         |
 | -------------------- | ----------- | ------------- |
 | IC                   | 模型预测能力      | 判断alpha有没有信息量 |

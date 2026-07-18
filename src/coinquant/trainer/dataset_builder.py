@@ -40,7 +40,6 @@ class DatasetBuilder:
             df[f'ma{ma_window}'] = df['close'].rolling(ma_window).mean()
             df[f'ma{ma_window}_slope'] = df[f'ma{ma_window}'].pct_change()
             self._z_rolling_score(df, f'ma{ma_window}_slope')
-            # df[f'feat_ma{ma_window}'] = 100 * (df[f'ma{ma_window}'] / df['open'] - 1)
         df['log_open']  = np.log(df['open'])
         df['log1p_volume'] = np.log(df['volume'])
         self._z_rolling_score(df, 'log_open')
@@ -104,4 +103,4 @@ def test():
         df.to_csv(f"{name}.csv")
         print(name, len(df))
 
-test()
+# test()

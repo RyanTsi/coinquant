@@ -25,7 +25,6 @@ class TransformerModel(BaseModel):
         lr=0.0001,
         metric="",
         early_stop=5,
-        loss="mse",
         optimizer="adam",
         reg=1e-3,
         n_jobs=10,
@@ -111,7 +110,7 @@ class TransformerModel(BaseModel):
         stop_steps = 0
         best_loss = np.inf
         evals_result['train'] = []
-        evals_result['val']   = []
+        evals_result['valid']   = []
 
         # train
         logger.info("training...")
@@ -146,9 +145,26 @@ class TransformerModel(BaseModel):
         if self.use_gpu:
             torch.cuda.empty_cache()
 
-    def predict(self, dataset):
+    def predict(self, data_loader):
         if not self.fitted:
             raise ValueError("model is not fitted yet!")
+        self.model.eval()
+
+        preds = []
+
+        with torch.no_grad():
+
+            for feature, _ in data_loader:
+
+                feature = feature.to(self.device)
+
+                pred = self.model(feature)
+
+                preds.append(
+                    pred.cpu()
+                )
+
+        return torch.cat(preds).numpy()
 
     def save(self, path):
         torch.save(
