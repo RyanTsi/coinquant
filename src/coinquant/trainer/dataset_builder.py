@@ -14,7 +14,7 @@ class DatasetBuilder:
         self._window = settings.data_set.rolling_window
         self._future_length = settings.data_set.future_length
         self._train_end_time = convert_datetime_to_timestamp(settings.data_set.split.train_end_date)
-        self._val_end_time = convert_datetime_to_timestamp(settings.data_set.split.val_end_date)
+        self._valid_end_time = convert_datetime_to_timestamp(settings.data_set.split.valid_end_date)
         self._test_end_time = convert_datetime_to_timestamp(settings.data_set.split.test_end_date)
         self._short_rate = settings.data_set.short_rate
         self._long_rate  = settings.data_set.long_rate
@@ -68,24 +68,24 @@ class DatasetBuilder:
         df[res_column_name] = (df[column_name] - df[column_name].rolling(self._window).mean()) / df[column_name].rolling(self._window).std()
 
     def _split_by_time(self, df):
-        if self._train_end_time >= self._val_end_time:
-            raise ValueError("train_end_date must be earlier than val_end_date")
-        if self._val_end_time >= self._test_end_time:
-            raise ValueError("val_end_date must be earlier than test_end_date")
+        if self._train_end_time >= self._valid_end_time:
+            raise ValueError("train_end_date must be earlier than valid_end_date")
+        if self._valid_end_time >= self._test_end_time:
+            raise ValueError("valid_end_date must be earlier than test_end_date")
 
         df = df.sort_values("open_time").reset_index(drop=True)
 
         train_df = df[df["open_time"] < self._train_end_time]
-        val_df   = df[(df["open_time"] >= self._train_end_time) & (df["open_time"] < self._val_end_time)]
-        test_df  = df[(df["open_time"] >= self._val_end_time)  & (df["open_time"] < self._test_end_time)]
+        valid_df  = df[(df["open_time"] >= self._train_end_time) & (df["open_time"] < self._valid_end_time)]
+        test_df  = df[(df["open_time"] >= self._valid_end_time)  & (df["open_time"] < self._test_end_time)]
 
         train_df = self._trim_future_boundary(train_df)
-        val_df = self._trim_future_boundary(val_df)
-        test_df = self._trim_future_boundary(test_df)
+        valid_df = self._trim_future_boundary(valid_df)
+        test_df  = self._trim_future_boundary(test_df)
 
         return {
             "train": train_df.reset_index(drop=True),
-            "val": val_df.reset_index(drop=True),
+            "valid": valid_df.reset_index(drop=True),
             "test": test_df.reset_index(drop=True),
         }
 

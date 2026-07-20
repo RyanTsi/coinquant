@@ -4,8 +4,10 @@ from typing import Annotated
 import typer
 
 from coinquant.handler.fetch_handler import FetchMode, FetchHandler
+from coinquant.handler.train_handler import train_model
 from coinquant.handler.export_handler import export_samples_to_csv
 from coinquant.config import settings
+from coinquant.trainer.model_trainer import LabelMode
 
 app = typer.Typer(help="BTC quantitative research command line tools.")
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -53,8 +55,8 @@ def export(
         end,
     )
 
-@app.command(help="train transformer model")
-def train_transformer(
+@app.command(help="train configured model")
+def train(
     symbol: Annotated[
         str,
         typer.Option("--symbol", "-s", help="训练的合约种类"),
@@ -62,9 +64,14 @@ def train_transformer(
     period: Annotated[
         str,
         typer.Option("--period", "-p", help="训练周期"),
-    ] = "4h",
+    ] = "15m",
+    label_mode: Annotated[
+        LabelMode,
+        typer.Option("--label_mode", '-l', help="预测长短线"),
+    ] = LabelMode.short
 ):
-    pass
+    save_path = train_model(symbol, period, label_mode)
+    typer.echo(f"model saved to {save_path}")
 
 def main() -> None:
     """Run the Typer application."""

@@ -1,6 +1,5 @@
 import math
 import logging
-from lightgbm import Dataset
 import numpy as np
 import torch
 from torch import nn
@@ -23,11 +22,9 @@ class TransformerModel(BaseModel):
         dropout: float = 0,
         n_epochs=100,
         lr=0.0001,
-        metric="",
         early_stop=5,
         optimizer="adam",
         reg=1e-3,
-        n_jobs=10,
         GPU=0,
         seed=None,
         **kwargs,
@@ -39,11 +36,9 @@ class TransformerModel(BaseModel):
         self.n_epochs = n_epochs
         self.lr = lr
         self.reg = reg
-        self.metric = metric
         self.batch_size = batch_size
         self.early_stop = early_stop
         self.optimizer = optimizer.lower()
-        self.n_jobs = n_jobs
         self.device = torch.device("cuda:%d" % GPU if torch.cuda.is_available() and GPU >= 0 else "cpu")
         self.seed = seed
         logger.info("Naive Transformer:" "\nbatch_size : {}" "\ndevice : {}".format(self.batch_size, self.device))
@@ -104,17 +99,20 @@ class TransformerModel(BaseModel):
         self,
         train_loader,
         valid_loader,
-        evals_result=dict(),
+        evals_result=None,
         save_path=None,
     ):
+        if evals_result is None:
+            evals_result = {}
         stop_steps = 0
         best_loss = np.inf
+        best_epoch = 0
+        best_param = copy.deepcopy(self.model.state_dict())
         evals_result['train'] = []
         evals_result['valid']   = []
 
         # train
         logger.info("training...")
-        self.fitted = True
 
         for step in range(self.n_epochs):
             logger.info("Epoch%d:", step)
@@ -140,7 +138,10 @@ class TransformerModel(BaseModel):
         
         logger.info("best loss: %.6lf @ %d" % (best_loss, best_epoch))
         self.model.load_state_dict(best_param)
-        torch.save(best_param, save_path)
+        self.fitted = True
+        
+        if save_path is not None:
+            torch.save(best_param, save_path)
 
         if self.use_gpu:
             torch.cuda.empty_cache()
@@ -265,4 +266,4 @@ class Transformer(nn.Module):
         # [T, N, F] --> [N, T*F]
         output = self.decoder_layer(output.transpose(1, 0)[:, -1, :])  # [512, 1]
 
-        return output.squeeze()
+        return output.squeeze(-1)

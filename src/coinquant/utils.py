@@ -7,3 +7,9 @@ def convert_datetime_to_timestamp(dt_str) -> int:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return int(dt.timestamp() * 1000)
+
+@staticmethod
+def get_setting(section, key: str, default=None):
+    if hasattr(section, "get"):
+        return section.get(key, default)
+    return getattr(section, key, default)
