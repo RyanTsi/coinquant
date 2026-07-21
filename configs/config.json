@@ -44,5 +44,48 @@
         "weight_decay": 0.0001,
         "device": "auto",
         "num_workers": 0
+    },
+    "backtest": {
+        "symbol": "BTC/USDT",
+        "period": "15m",
+        "split": "test",
+        "thresholds": {
+            "long_entry": 0.0,
+            "short_entry": 0.0,
+            "long_exit": 0.0,
+            "short_exit": 0.0
+        },
+        "execution": {
+            "initial_cash": 10000.0,
+            "cash_fraction": 0.3333333333333333,
+            "fee_rate": 0.0004,
+            "min_trade_cash": 10.0,
+            "max_buy_count": 3,
+            "min_hold_bars": 0,
+            "cooldown_bars": 0,
+            "liquidate_on_end": true
+        },
+        "output_dir": null,
+        "grid_search": {
+            "split": "valid",
+            "execution": {
+                "min_hold_bars": 16,
+                "cooldown_bars": 16
+            },
+            "grid_size": 4,
+            "entry_min_quantile": 0.70,
+            "entry_max_quantile": 0.95,
+            "exit_min_quantile": 0.01,
+            "exit_max_quantile": 0.30,
+            "top_k": 20,
+            "min_trades": 1,
+            "max_trades": null,
+            "max_turnover": null,
+            "sort_by": "score",
+            "drawdown_weight": 0.5,
+            "turnover_weight": 0.0001,
+            "trade_weight": 0.0001,
+            "output_dir": null
+        }
     }
 }

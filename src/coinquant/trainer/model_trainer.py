@@ -120,7 +120,7 @@ class ModelTrainer:
         save_dir = Path(settings.path.model_path)
         save_dir.mkdir(parents=True, exist_ok=True)
         symbol = self.symbol.replace("/", "_").replace(":", "_")
-        filename = f"{self.model_name}_{symbol}_{self.period}.pt"
+        filename = f"{self.model_name}_{symbol}_{self.period}_{self.label_mode.value}.pt"
         return save_dir / filename
 
     def _save_metadata(
@@ -134,6 +134,7 @@ class ModelTrainer:
             "model_name": self.model_name,
             "symbol": self.symbol,
             "period": self.period,
+            "label_mode": self.label_mode.value,
             "feature_columns": feature_columns,
             "label_column": label_column,
             "evals_result": evals_result,

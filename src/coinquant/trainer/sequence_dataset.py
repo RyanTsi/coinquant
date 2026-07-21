@@ -37,6 +37,10 @@ class SequenceDataset(Dataset):
     def __len__(self) -> int:
         return len(self._end_indices)
 
+    @property
+    def end_indices(self) -> np.ndarray:
+        return self._end_indices.copy()
+
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         end_idx = self._end_indices[index]
         start_idx = end_idx - self._sequence_length + 1
