@@ -16,8 +16,8 @@ class DatasetBuilder:
         self._train_end_time = convert_datetime_to_timestamp(settings.data_set.split.train_end_date)
         self._valid_end_time = convert_datetime_to_timestamp(settings.data_set.split.valid_end_date)
         self._test_end_time = convert_datetime_to_timestamp(settings.data_set.split.test_end_date)
-        self._short_rate = settings.data_set.short_rate
-        self._long_rate  = settings.data_set.long_rate
+        self._fast_rate = settings.data_set.fast_rate
+        self._slow_rate = settings.data_set.slow_rate
 
     def build_from_db(self):
         db = DataBase()
@@ -70,24 +70,24 @@ class DatasetBuilder:
         return df
 
     def _build_labels(self, df):
-        df['label_close_short'] = 0
-        df['label_close_long'] = 0
-        short_weight = 1.0
-        long_weight  = 1.0 
-        total_short_weight = 0.0
-        total_long_weight = 0.0
+        df['label_close_fast'] = 0
+        df['label_close_slow'] = 0
+        fast_weight = 1.0
+        slow_weight = 1.0
+        total_fast_weight = 0.0
+        total_slow_weight = 0.0
         for i in range(1, self._future_length + 1):
-            df['label_close_short'] += short_weight * df['feat_ret_close'].shift(-i)
-            total_short_weight += short_weight
-            short_weight *= self._short_rate
+            df['label_close_fast'] += fast_weight * df['feat_ret_close'].shift(-i)
+            total_fast_weight += fast_weight
+            fast_weight *= self._fast_rate
 
         for i in range(1, self._future_length ** 2 + 1):
-            df['label_close_long'] += long_weight * df['feat_ret_close'].shift(-i)
-            total_long_weight += long_weight
-            long_weight *= self._long_rate
+            df['label_close_slow'] += slow_weight * df['feat_ret_close'].shift(-i)
+            total_slow_weight += slow_weight
+            slow_weight *= self._slow_rate
 
-        df['label_close_short'] /= total_short_weight
-        df['label_close_long']  /= total_long_weight
+        df['label_close_fast'] /= total_fast_weight
+        df['label_close_slow'] /= total_slow_weight
         
         return df
     
@@ -120,7 +120,7 @@ class DatasetBuilder:
     def _trim_future_boundary(self, df):
         if len(df) <= self._future_length ** 2:
             return df.iloc[:0].copy()
-        return df.iloc[:-self._future_length ** 2].dropna(subset=["label_close_long"]).copy()
+        return df.iloc[:-self._future_length ** 2].dropna(subset=["label_close_slow"]).copy()
 
 def test():
     datasetBuilder = DatasetBuilder("BTC/USDT", "4h")

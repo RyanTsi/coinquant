@@ -25,8 +25,8 @@
         "rolling_window": 128,
         "future_length": 4,
         "sequence_length": 128,
-        "short_rate": 0.85, 
-        "long_rate": 0.95,
+        "fast_rate": 0.85,
+        "slow_rate": 0.95,
         "split": {
             "train_end_date": "2024-07-01T00:00:00Z",
             "valid_end_date": "2025-07-01T00:00:00Z",
@@ -36,56 +36,5 @@
     "model": {
         "name": "transformer",
         "config_dir": "configs/model"
-    },
-    "train": {
-        "batch_size": 64,
-        "epochs": 10,
-        "learning_rate": 0.0005,
-        "weight_decay": 0.0001,
-        "device": "auto",
-        "num_workers": 0
-    },
-    "backtest": {
-        "symbol": "BTC/USDT",
-        "period": "15m",
-        "split": "test",
-        "thresholds": {
-            "long_entry": 0.0,
-            "short_entry": 0.0,
-            "long_exit": 0.0,
-            "short_exit": 0.0
-        },
-        "execution": {
-            "initial_cash": 10000.0,
-            "cash_fraction": 0.3333333333333333,
-            "fee_rate": 0.0004,
-            "min_trade_cash": 10.0,
-            "max_buy_count": 3,
-            "min_hold_bars": 0,
-            "cooldown_bars": 0,
-            "liquidate_on_end": true
-        },
-        "output_dir": null,
-        "grid_search": {
-            "split": "valid",
-            "execution": {
-                "min_hold_bars": 16,
-                "cooldown_bars": 16
-            },
-            "grid_size": 4,
-            "entry_min_quantile": 0.70,
-            "entry_max_quantile": 0.95,
-            "exit_min_quantile": 0.01,
-            "exit_max_quantile": 0.30,
-            "top_k": 20,
-            "min_trades": 1,
-            "max_trades": null,
-            "max_turnover": null,
-            "sort_by": "score",
-            "drawdown_weight": 0.5,
-            "turnover_weight": 0.0001,
-            "trade_weight": 0.0001,
-            "output_dir": null
-        }
     }
 }

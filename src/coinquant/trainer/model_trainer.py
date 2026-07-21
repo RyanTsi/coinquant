@@ -21,8 +21,8 @@ MODEL_REGISTRY = {
 }
 
 class LabelMode(str, Enum):
-    short = "short"
-    long = "long"
+    fast = "fast"
+    slow = "slow"
 
 
 class ModelTrainer:
@@ -37,7 +37,7 @@ class ModelTrainer:
         splits = DatasetBuilder(self.symbol, self.period).build_splits_from_db()
         train_df = splits["train"]
         valid_df = splits["valid"]
-        label_column = "label_close_short" if self.label_mode == LabelMode.short else "label_close_long"
+        label_column = "label_close_fast" if self.label_mode == LabelMode.fast else "label_close_slow"
 
         sequence_length = int(tools.get_setting(settings.data_set, "sequence_length", 128))
         feature_columns = self._resolve_feature_columns(train_df)
