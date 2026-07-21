@@ -3,7 +3,7 @@
         "d_feat": 9,
         "d_linear": 128,
         "d_model": 64,
-        "batch_size" : 256,
+        "batch_size" : 1024,
         "nhead": 4,
         "num_layers": 2,
         "dropout": 0.1,

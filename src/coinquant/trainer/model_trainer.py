@@ -37,7 +37,7 @@ class ModelTrainer:
         splits = DatasetBuilder(self.symbol, self.period).build_splits_from_db()
         train_df = splits["train"]
         valid_df = splits["valid"]
-        label_column = "label_close_short" if self.label_mode == LabelMode.short else "label_close_short"
+        label_column = "label_close_short" if self.label_mode == LabelMode.short else "label_close_long"
 
         sequence_length = int(tools.get_setting(settings.data_set, "sequence_length", 128))
         feature_columns = self._resolve_feature_columns(train_df)
@@ -50,7 +50,7 @@ class ModelTrainer:
         if len(val_dataset) == 0:
             raise ValueError("validation dataset is empty after sequence filtering")
 
-        batch_size = self.model_config.get("params.batch_size", 256)
+        batch_size = int(self._model_params_config().get("batch_size", 896))
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -87,13 +87,15 @@ class ModelTrainer:
             supported = ", ".join(sorted(MODEL_REGISTRY))
             raise ValueError(f"unsupported model {self.model_name!r}; supported models: {supported}")
 
+        params = dict(self._model_params_config())
+
+        return model_class(**params)
+
+    def _model_params_config(self) -> dict[str, Any]:
         params_config = self.model_config.get("params", {})
         if not isinstance(params_config, dict):
             raise ValueError(f"model config params must be an object for {self.model_name!r}")
-
-        params = dict(params_config)
-
-        return model_class(**params)
+        return params_config
 
     def _resolve_feature_columns(self, train_df) -> list[str]:
         feature_columns = [column for column in train_df.columns if column.startswith("feat_")]

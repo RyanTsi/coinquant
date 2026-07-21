@@ -48,7 +48,8 @@ class TransformerModel(BaseModel):
             torch.manual_seed(self.seed)
 
         self.model = Transformer(d_feat, d_linear, d_model, nhead, num_layers, dropout, self.device)
-
+        # self.model = MLP()
+        self.model = LinearModel()
         if optimizer.lower() == "adam":
             self.train_optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.reg)
         elif optimizer.lower() == "gd":
@@ -59,6 +60,7 @@ class TransformerModel(BaseModel):
         self.criterion = nn.MSELoss()
         self.fitted = False
         self.model.to(self.device)
+        self.first = False
 
     @property
     def use_gpu(self):
@@ -66,17 +68,40 @@ class TransformerModel(BaseModel):
 
     def train_epoch(self, data_loader):
         self.model.train()
+        self.first = False
         for feature, label in data_loader:
+            # print(label.min(), label.max())
+            
+
             feature = feature.to(self.device)
             label = label.to(self.device)
 
-            pred = self.model(feature.float())  # .float()
-            loss = self.criterion(pred, label)
+            pred = self.model(feature.float())  # .float()=             
 
+            loss = self.criterion(pred, label)
+            
             self.train_optimizer.zero_grad()
+            # before = self.model.feature_layer[0].weight.clone()
+
             loss.backward()
+            
+            if not self.first:
+                # print(feature.shape)
+                # print(label.shape)
+                print(label.mean(), label.std())
+                print(pred.mean(), pred.std())
+                print(loss.item())
+                # print(self.model.decoder_layer.weight.grad.abs().mean())
+                print(pred[:20])
+                print(label[:20])
+                self.first = True        
+
+            
             torch.nn.utils.clip_grad_value_(self.model.parameters(), 3.0)
             self.train_optimizer.step()
+            
+            # after = self.model.feature_layer[0].weight
+            # print((after-before).abs().mean())
 
     def test_epoch(self, data_loader):
         self.model.eval()
@@ -267,3 +292,33 @@ class Transformer(nn.Module):
         output = self.decoder_layer(output.transpose(1, 0)[:, -1, :])  # [512, 1]
 
         return output.squeeze(-1)
+
+class MLP(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.net = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(128*9,256),
+            nn.ReLU(),
+            nn.Linear(256,64),
+            nn.ReLU(),
+            nn.Linear(64,1),
+        )
+
+    def forward(self,x):
+        return self.net(x).squeeze(-1)
+    
+class LinearModel(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.linear = nn.Linear(128*9,1)
+
+    def forward(self,x):
+
+        x=x.flatten(1)
+
+        return self.linear(x).squeeze(-1)

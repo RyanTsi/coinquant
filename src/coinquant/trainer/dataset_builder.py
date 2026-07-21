@@ -41,7 +41,7 @@ class DatasetBuilder:
             df[f'ma{ma_window}_slope'] = df[f'ma{ma_window}'].pct_change()
             self._z_rolling_score(df, f'ma{ma_window}_slope')
         df['log_open']  = np.log(df['open'])
-        df['log1p_volume'] = np.log(df['volume'])
+        df['log1p_volume'] = np.log1p(df['volume'])
         self._z_rolling_score(df, 'log_open')
         self._z_rolling_score(df, 'log1p_volume')
         df = df.dropna()
@@ -52,15 +52,21 @@ class DatasetBuilder:
         df['label_close_long'] = 0
         short_weight = 1.0
         long_weight  = 1.0 
-
+        total_short_weight = 0.0
+        total_long_weight = 0.0
         for i in range(1, self._future_length + 1):
             df['label_close_short'] += short_weight * df['feat_ret_close'].shift(-i)
+            total_short_weight += short_weight
             short_weight *= self._short_rate
 
         for i in range(1, self._future_length ** 2 + 1):
             df['label_close_long'] += long_weight * df['feat_ret_close'].shift(-i)
+            total_long_weight += long_weight
             long_weight *= self._long_rate
 
+        df['label_close_short'] /= total_short_weight
+        df['label_close_long']  /= total_long_weight
+        
         return df
     
     def _z_rolling_score(self, df, column_name):
