@@ -62,7 +62,7 @@ class ModelTrainer:
             shuffle=False,
         )
 
-        model = self._build_model()
+        model = self._build_model(len(feature_columns))
         save_path = self._checkpoint_path()
         evals_result: dict[str, list[float]] = {}
 
@@ -81,13 +81,14 @@ class ModelTrainer:
         
         return save_path
 
-    def _build_model(self) -> TransformerModel:
+    def _build_model(self, d_feat: int) -> TransformerModel:
         model_class = MODEL_REGISTRY.get(self.model_name)
         if model_class is None:
             supported = ", ".join(sorted(MODEL_REGISTRY))
             raise ValueError(f"unsupported model {self.model_name!r}; supported models: {supported}")
 
         params = dict(self._model_params_config())
+        params["d_feat"] = d_feat
 
         return model_class(**params)
 

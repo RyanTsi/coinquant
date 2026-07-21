@@ -36,15 +36,37 @@ class DatasetBuilder:
         df['feat_ret_high']  = 100 * (df['high'] / df['open'] - 1)
         df['feat_ret_low']   = 100 * (df['low'] / df['open'] - 1)
         df['feat_ret_close'] = 100 * (df['close'] / df['open'] - 1)
+
+        candle_high_body = df[['open', 'close']].max(axis=1)
+        candle_low_body = df[['open', 'close']].min(axis=1)
+        df['feat_range_high_low'] = 100 * (df['high'] / df['low'] - 1)
+        df['feat_body_abs'] = df['feat_ret_close'].abs()
+        df['feat_upper_shadow'] = 100 * (df['high'] / candle_high_body - 1)
+        df['feat_lower_shadow'] = 100 * (candle_low_body / df['low'] - 1)
+
+        for return_window in [1, 2, 4, 8, 16, 32]:
+            df[f'feat_log_ret_{return_window}'] = 100 * np.log(df['close'] / df['close'].shift(return_window))
+
+        for volatility_window in [8, 16, 32, 64]:
+            df[f'volatility_{volatility_window}'] = df['feat_ret_close'].rolling(volatility_window).std()
+            self._z_rolling_score(df, f'volatility_{volatility_window}')
+
         for ma_window in [20, 50, 100, 200]:
             df[f'ma{ma_window}'] = df['close'].rolling(ma_window).mean()
+            df[f'feat_ma{ma_window}_distance'] = 100 * (df['close'] / df[f'ma{ma_window}'] - 1)
             df[f'ma{ma_window}_slope'] = df[f'ma{ma_window}'].pct_change()
             self._z_rolling_score(df, f'ma{ma_window}_slope')
+
         df['log_open']  = np.log(df['open'])
         df['log1p_volume'] = np.log1p(df['volume'])
         self._z_rolling_score(df, 'log_open')
         self._z_rolling_score(df, 'log1p_volume')
-        df = df.dropna()
+
+        for volume_window in [1, 4, 16]:
+            df[f'volume_change_{volume_window}'] = df['log1p_volume'].diff(volume_window)
+            self._z_rolling_score(df, f'volume_change_{volume_window}')
+
+        df = df.replace([np.inf, -np.inf], np.nan).dropna()
         return df
 
     def _build_labels(self, df):

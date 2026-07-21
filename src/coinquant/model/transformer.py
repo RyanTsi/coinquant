@@ -19,11 +19,11 @@ class TransformerModel(BaseModel):
         batch_size: int = 8192,
         nhead: int = 4,
         num_layers: int = 2,
+        dim_feedforward: int = 256,
         dropout: float = 0,
         n_epochs=100,
         lr=0.0001,
         early_stop=5,
-        optimizer="adam",
         reg=1e-3,
         GPU=0,
         seed=None,
@@ -32,13 +32,13 @@ class TransformerModel(BaseModel):
         # set hyper-parameters.
         self.d_linear = d_linear
         self.d_model = d_model
+        self.dim_feedforward = dim_feedforward
         self.dropout = dropout
         self.n_epochs = n_epochs
         self.lr = lr
         self.reg = reg
         self.batch_size = batch_size
         self.early_stop = early_stop
-        self.optimizer = optimizer.lower()
         self.device = torch.device("cuda:%d" % GPU if torch.cuda.is_available() and GPU >= 0 else "cpu")
         self.seed = seed
         logger.info("Naive Transformer:" "\nbatch_size : {}" "\ndevice : {}".format(self.batch_size, self.device))
@@ -47,20 +47,24 @@ class TransformerModel(BaseModel):
             np.random.seed(self.seed)
             torch.manual_seed(self.seed)
 
-        self.model = Transformer(d_feat, d_linear, d_model, nhead, num_layers, dropout, self.device)
+        self.model = Transformer(
+            d_feat,
+            d_linear,
+            d_model,
+            nhead,
+            num_layers,
+            dim_feedforward,
+            dropout,
+            self.device,
+        )
         # self.model = MLP()
-        self.model = LinearModel()
-        if optimizer.lower() == "adam":
-            self.train_optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.reg)
-        elif optimizer.lower() == "gd":
-            self.train_optimizer = optim.SGD(self.model.parameters(), lr=self.lr, weight_decay=self.reg)
-        else:
-            raise NotImplementedError("optimizer {} is not supported!".format(optimizer))
+        # self.model = LinearModel()
+        self.train_optimizer = optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.reg)
         
         self.criterion = nn.MSELoss()
         self.fitted = False
         self.model.to(self.device)
-        self.first = False
+        # self.first = False
 
     @property
     def use_gpu(self):
@@ -68,7 +72,7 @@ class TransformerModel(BaseModel):
 
     def train_epoch(self, data_loader):
         self.model.train()
-        self.first = False
+        # self.first = False
         for feature, label in data_loader:
             # print(label.min(), label.max())
             
@@ -85,16 +89,16 @@ class TransformerModel(BaseModel):
 
             loss.backward()
             
-            if not self.first:
+            # if not self.first:
                 # print(feature.shape)
                 # print(label.shape)
-                print(label.mean(), label.std())
-                print(pred.mean(), pred.std())
-                print(loss.item())
+                # print(label.mean(), label.std())
+                # print(pred.mean(), pred.std())
+                # print(loss.item())
                 # print(self.model.decoder_layer.weight.grad.abs().mean())
-                print(pred[:20])
-                print(label[:20])
-                self.first = True        
+                # print(pred[:20])
+                # print(label[:20])
+                # self.first = True        
 
             
             torch.nn.utils.clip_grad_value_(self.model.parameters(), 3.0)
@@ -103,9 +107,15 @@ class TransformerModel(BaseModel):
             # after = self.model.feature_layer[0].weight
             # print((after-before).abs().mean())
 
-    def test_epoch(self, data_loader):
+    def test_epoch(self, data_loader, return_metrics: bool = False):
         self.model.eval()
-        total_loss = 0
+        total_loss = 0.0
+        total_count = 0
+        pred_sum = 0.0
+        pred_square_sum = 0.0
+        label_sum = 0.0
+        label_square_sum = 0.0
+        pred_label_sum = 0.0
 
         with torch.no_grad():
 
@@ -116,9 +126,40 @@ class TransformerModel(BaseModel):
                 pred = self.model(feature.float()) # .float()
                 loss = self.criterion(pred, label)
 
-                total_loss += loss.item()
+                batch_count = label.numel()
+                total_loss += loss.item() * batch_count
+                total_count += batch_count
+                pred_sum += pred.sum().item()
+                pred_square_sum += pred.square().sum().item()
+                label_sum += label.sum().item()
+                label_square_sum += label.square().sum().item()
+                pred_label_sum += (pred * label).sum().item()
 
-        return total_loss / len(data_loader)
+        if total_count == 0:
+            raise ValueError("data loader is empty")
+
+        loss = total_loss / total_count
+        if not return_metrics:
+            return loss
+
+        pred_mean = pred_sum / total_count
+        label_mean = label_sum / total_count
+        pred_var = max(pred_square_sum / total_count - pred_mean ** 2, 0.0)
+        label_var = max(label_square_sum / total_count - label_mean ** 2, 0.0)
+        pred_std = math.sqrt(pred_var)
+        label_std = math.sqrt(label_var)
+        covariance = pred_label_sum / total_count - pred_mean * label_mean
+        corr = covariance / (pred_std * label_std) if pred_std > 0 and label_std > 0 else 0.0
+
+        return {
+            "loss": loss,
+            "mean_baseline_mse": label_var,
+            "pred_mean": pred_mean,
+            "pred_std": pred_std,
+            "label_mean": label_mean,
+            "label_std": label_std,
+            "corr": corr,
+        }
 
     def fit(
         self,
@@ -135,6 +176,8 @@ class TransformerModel(BaseModel):
         best_param = copy.deepcopy(self.model.state_dict())
         evals_result['train'] = []
         evals_result['valid']   = []
+        evals_result['train_metrics'] = []
+        evals_result['valid_metrics'] = []
 
         # train
         logger.info("training...")
@@ -144,11 +187,28 @@ class TransformerModel(BaseModel):
             logger.info("training...")
             self.train_epoch(train_loader)
             logger.info("evaluating...")
-            train_loss = self.test_epoch(train_loader)
-            val_loss = self.test_epoch(valid_loader)
-            logger.info("train %.6f, valid %.6f" % (train_loss, val_loss))
+            train_metrics = self.test_epoch(train_loader, return_metrics=True)
+            valid_metrics = self.test_epoch(valid_loader, return_metrics=True)
+            train_loss = train_metrics["loss"]
+            val_loss = valid_metrics["loss"]
+            logger.info(
+                (
+                    "train %.6f base %.6f pred_std %.6f corr %.4f, "
+                    "valid %.6f base %.6f pred_std %.6f corr %.4f"
+                ),
+                train_loss,
+                train_metrics["mean_baseline_mse"],
+                train_metrics["pred_std"],
+                train_metrics["corr"],
+                val_loss,
+                valid_metrics["mean_baseline_mse"],
+                valid_metrics["pred_std"],
+                valid_metrics["corr"],
+            )
             evals_result["train"].append(train_loss)
             evals_result["valid"].append(val_loss)
+            evals_result["train_metrics"].append(train_metrics)
+            evals_result["valid_metrics"].append(valid_metrics)
 
             if val_loss < best_loss:
                 best_loss = val_loss
@@ -253,7 +313,17 @@ class LocalformerEncoder(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, d_feat=6, d_linear=12, d_model=8, nhead=4, num_layers=2, dropout=0.5, device=None):
+    def __init__(
+        self,
+        d_feat=6,
+        d_linear=12,
+        d_model=8,
+        nhead=4,
+        num_layers=2,
+        dim_feedforward=256,
+        dropout=0.5,
+        device=None,
+    ):
         super(Transformer, self).__init__()
         self.rnn = nn.GRU(
             input_size=d_model,
@@ -268,7 +338,12 @@ class Transformer(nn.Module):
             nn.Linear(d_linear, d_model),
         )
         self.pos_encoder = PositionalEncoding(d_model)
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
+        self.encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+        )
         self.transformer_encoder = LocalformerEncoder(self.encoder_layer, num_layers=num_layers, d_model=d_model)
         self.decoder_layer = nn.Linear(d_model, 1)
         self.device = device

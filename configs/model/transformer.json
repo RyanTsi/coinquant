@@ -6,12 +6,12 @@
         "batch_size" : 1024,
         "nhead": 4,
         "num_layers": 2,
+        "dim_feedforward": 256,
         "dropout": 0.1,
         "n_epochs": 10000,
-        "lr": 0.0001,
+        "lr": 3e-4,
         "early_stop": 10,
-        "optimizer": "adam",
-        "reg": 1e-3,
+        "reg": 1e-5,
         "GPU": 0,
         "seed": 42
     }
