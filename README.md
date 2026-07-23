@@ -23,3 +23,20 @@
 | Win Rate             | 胜率          | 心理体验和稳定性参考    |
 | Profit Factor        | 总盈利 ÷ 总亏损   | 判断盈亏质量        |
 | Average Holding Time | 平均持仓时间      | 判断策略节奏是否合理    |
+
+## 回测
+
+先分别训练 fast 和 slow 模型：
+
+```bash
+coinquant train --symbol BTC/USDT --period 15m --label_mode fast
+coinquant train --symbol BTC/USDT --period 15m --label_mode slow
+```
+
+运行 test 区间回测并生成网页报告：
+
+```bash
+coinquant backtest --symbol BTC/USDT --period 15m
+```
+
+回测使用本地 DB 的 test split 和 `data/model` 下的 fast/slow checkpoint。默认策略规则是预测值大于阈值做多，小于负阈值做空，其余空仓；可通过 `--threshold` 和 `--fee-rate` 调整。报告默认输出到 `data/backtest/`，内容包含 K 线、fast/slow 预测值、权益曲线和指标表。

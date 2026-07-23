@@ -57,14 +57,12 @@ class TransformerModel(BaseModel):
             dropout,
             self.device,
         )
-        # self.model = MLP()
-        # self.model = LinearModel()
+        # self.model = LinearModel(d_feat)
         self.train_optimizer = optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.reg)
         
         self.criterion = nn.MSELoss()
         self.fitted = False
         self.model.to(self.device)
-        # self.first = False
 
     @property
     def use_gpu(self):
@@ -72,50 +70,26 @@ class TransformerModel(BaseModel):
 
     def train_epoch(self, data_loader):
         self.model.train()
-        # self.first = False
-        for feature, label in data_loader:
-            # print(label.min(), label.max())
-            
+        total_loss = 0
 
+        for feature, label in data_loader:
             feature = feature.to(self.device)
             label = label.to(self.device)
 
-            pred = self.model(feature.float())  # .float()=             
-
+            pred = self.model(feature.float())  # .float()
             loss = self.criterion(pred, label)
-            
+            total_loss += loss.item()
+
             self.train_optimizer.zero_grad()
-            # before = self.model.feature_layer[0].weight.clone()
-
             loss.backward()
-            
-            # if not self.first:
-                # print(feature.shape)
-                # print(label.shape)
-                # print(label.mean(), label.std())
-                # print(pred.mean(), pred.std())
-                # print(loss.item())
-                # print(self.model.decoder_layer.weight.grad.abs().mean())
-                # print(pred[:20])
-                # print(label[:20])
-                # self.first = True        
-
-            
             torch.nn.utils.clip_grad_value_(self.model.parameters(), 3.0)
             self.train_optimizer.step()
-            
-            # after = self.model.feature_layer[0].weight
-            # print((after-before).abs().mean())
 
-    def test_epoch(self, data_loader, return_metrics: bool = False):
+        return total_loss / len(data_loader)
+
+    def test_epoch(self, data_loader):
         self.model.eval()
-        total_loss = 0.0
-        total_count = 0
-        pred_sum = 0.0
-        pred_square_sum = 0.0
-        label_sum = 0.0
-        label_square_sum = 0.0
-        pred_label_sum = 0.0
+        total_loss = 0
 
         with torch.no_grad():
 
@@ -126,40 +100,9 @@ class TransformerModel(BaseModel):
                 pred = self.model(feature.float()) # .float()
                 loss = self.criterion(pred, label)
 
-                batch_count = label.numel()
-                total_loss += loss.item() * batch_count
-                total_count += batch_count
-                pred_sum += pred.sum().item()
-                pred_square_sum += pred.square().sum().item()
-                label_sum += label.sum().item()
-                label_square_sum += label.square().sum().item()
-                pred_label_sum += (pred * label).sum().item()
+                total_loss += loss.item()
 
-        if total_count == 0:
-            raise ValueError("data loader is empty")
-
-        loss = total_loss / total_count
-        if not return_metrics:
-            return loss
-
-        pred_mean = pred_sum / total_count
-        label_mean = label_sum / total_count
-        pred_var = max(pred_square_sum / total_count - pred_mean ** 2, 0.0)
-        label_var = max(label_square_sum / total_count - label_mean ** 2, 0.0)
-        pred_std = math.sqrt(pred_var)
-        label_std = math.sqrt(label_var)
-        covariance = pred_label_sum / total_count - pred_mean * label_mean
-        corr = covariance / (pred_std * label_std) if pred_std > 0 and label_std > 0 else 0.0
-
-        return {
-            "loss": loss,
-            "mean_baseline_mse": label_var,
-            "pred_mean": pred_mean,
-            "pred_std": pred_std,
-            "label_mean": label_mean,
-            "label_std": label_std,
-            "corr": corr,
-        }
+        return total_loss / len(data_loader)
 
     def fit(
         self,
@@ -176,42 +119,23 @@ class TransformerModel(BaseModel):
         best_param = copy.deepcopy(self.model.state_dict())
         evals_result['train'] = []
         evals_result['valid']   = []
-        evals_result['train_metrics'] = []
-        evals_result['valid_metrics'] = []
 
         # train
-        logger.info("training...")
+        logger.info("training begin")
 
         for step in range(self.n_epochs):
             logger.info("Epoch%d:", step)
             logger.info("training...")
-            self.train_epoch(train_loader)
+            train_loss = self.train_epoch(train_loader)
             logger.info("evaluating...")
-            train_metrics = self.test_epoch(train_loader, return_metrics=True)
-            valid_metrics = self.test_epoch(valid_loader, return_metrics=True)
-            train_loss = train_metrics["loss"]
-            val_loss = valid_metrics["loss"]
-            logger.info(
-                (
-                    "train %.6f base %.6f pred_std %.6f corr %.4f, "
-                    "valid %.6f base %.6f pred_std %.6f corr %.4f"
-                ),
-                train_loss,
-                train_metrics["mean_baseline_mse"],
-                train_metrics["pred_std"],
-                train_metrics["corr"],
-                val_loss,
-                valid_metrics["mean_baseline_mse"],
-                valid_metrics["pred_std"],
-                valid_metrics["corr"],
-            )
+            train_loss = self.test_epoch(train_loader)
+            valid_loss = self.test_epoch(valid_loader)
+            logger.info("train %.6f, valid %.6f" % (train_loss, valid_loss))
             evals_result["train"].append(train_loss)
-            evals_result["valid"].append(val_loss)
-            evals_result["train_metrics"].append(train_metrics)
-            evals_result["valid_metrics"].append(valid_metrics)
+            evals_result["valid"].append(valid_loss)
 
-            if val_loss < best_loss:
-                best_loss = val_loss
+            if valid_loss < best_loss:
+                best_loss = valid_loss
                 stop_steps = 0
                 best_epoch = step
                 best_param = copy.deepcopy(self.model.state_dict())
@@ -370,12 +294,12 @@ class Transformer(nn.Module):
 
 class MLP(nn.Module):
 
-    def __init__(self):
+    def __init__(self, d_feat=30):
         super().__init__()
 
         self.net = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(128*9,256),
+            nn.Linear(128*d_feat,256),
             nn.ReLU(),
             nn.Linear(256,64),
             nn.ReLU(),
@@ -387,10 +311,10 @@ class MLP(nn.Module):
     
 class LinearModel(nn.Module):
 
-    def __init__(self):
+    def __init__(self, d_feat=30):
         super().__init__()
 
-        self.linear = nn.Linear(128*9,1)
+        self.linear = nn.Linear(128*d_feat,1)
 
     def forward(self,x):
 

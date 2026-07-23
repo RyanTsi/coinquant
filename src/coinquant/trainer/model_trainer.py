@@ -50,13 +50,13 @@ class ModelTrainer:
         if len(val_dataset) == 0:
             raise ValueError("validation dataset is empty after sequence filtering")
 
-        batch_size = int(self._model_params_config().get("batch_size", 896))
+        batch_size = int(self._model_params_config().get("batch_size", 1024))
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
         )
-        val_loader = DataLoader(
+        valid_loader = DataLoader(
             val_dataset,
             batch_size=batch_size,
             shuffle=False,
@@ -76,7 +76,7 @@ class ModelTrainer:
             len(val_dataset),
         )
         
-        model.fit(train_loader, val_loader, evals_result=evals_result, save_path=save_path)
+        model.fit(train_loader, valid_loader, evals_result=evals_result, save_path=save_path)
         self._save_metadata(save_path, feature_columns, label_column, evals_result)
         
         return save_path

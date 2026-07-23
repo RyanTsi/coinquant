@@ -51,7 +51,7 @@ class DatasetBuilder:
             df[f'volatility_{volatility_window}'] = df['feat_ret_close'].rolling(volatility_window).std()
             self._z_rolling_score(df, f'volatility_{volatility_window}')
 
-        for ma_window in [20, 50, 100, 200]:
+        for ma_window in [3, 5, 20, 50, 100, 200]:
             df[f'ma{ma_window}'] = df['close'].rolling(ma_window).mean()
             df[f'feat_ma{ma_window}_distance'] = 100 * (df['close'] / df[f'ma{ma_window}'] - 1)
             df[f'ma{ma_window}_slope'] = df[f'ma{ma_window}'].pct_change()
@@ -70,24 +70,24 @@ class DatasetBuilder:
         return df
 
     def _build_labels(self, df):
-        df['label_close_fast'] = 0
-        df['label_close_slow'] = 0
-        fast_weight = 1.0
-        slow_weight = 1.0
-        total_fast_weight = 0.0
-        total_slow_weight = 0.0
-        for i in range(1, self._future_length + 1):
-            df['label_close_fast'] += fast_weight * df['feat_ret_close'].shift(-i)
-            total_fast_weight += fast_weight
-            fast_weight *= self._fast_rate
+        df['label_close_fast'] = 100 * np.log(df['ma3'].shift(-self._future_length) / df['ma3'])
+        df['label_close_slow'] = 100 * np.log(df['ma3'].shift(-self._future_length ** 2) / df['ma3'])
+        # fast_weight = 1.0
+        # slow_weight = 1.0
+        # total_fast_weight = 0.0
+        # total_slow_weight = 0.0
+        # for i in range(1, self._future_length + 1):
+        #     df['label_close_fast'] += fast_weight * df['feat_ret_close'].shift(-i)
+        #     total_fast_weight += fast_weight
+        #     fast_weight *= self._fast_rate
 
-        for i in range(1, self._future_length ** 2 + 1):
-            df['label_close_slow'] += slow_weight * df['feat_ret_close'].shift(-i)
-            total_slow_weight += slow_weight
-            slow_weight *= self._slow_rate
+        # for i in range(1, self._future_length ** 2 + 1):
+        #     df['label_close_slow'] += slow_weight * df['feat_ret_close'].shift(-i)
+        #     total_slow_weight += slow_weight
+        #     slow_weight *= self._slow_rate
 
-        df['label_close_fast'] /= total_fast_weight
-        df['label_close_slow'] /= total_slow_weight
+        # df['label_close_fast'] /= total_fast_weight
+        # df['label_close_slow'] /= total_slow_weight
         
         return df
     

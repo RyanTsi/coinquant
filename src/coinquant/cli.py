@@ -1,5 +1,4 @@
 import logging
-import json
 from typing import Annotated
 
 import typer
@@ -7,12 +6,9 @@ import typer
 from coinquant.handler.fetch_handler import FetchMode, FetchHandler
 from coinquant.handler.train_handler import train_model
 from coinquant.handler.export_handler import export_samples_to_csv
-from coinquant.handler.backtest_handler import (
-    run_alpha_backtest,
-    run_alpha_grid_search,
-)
+from coinquant.handler.backtest_handler import format_backtest_metrics, run_backtest
+
 from coinquant.config import settings
-from coinquant.backtest.alpha_backtester import BacktestSplit
 from coinquant.trainer.model_trainer import LabelMode
 
 app = typer.Typer(help="BTC quantitative research command line tools.")
@@ -78,6 +74,33 @@ def train(
 ):
     save_path = train_model(symbol, period, label_mode)
     typer.echo(f"model saved to {save_path}")
+
+@app.command(help="run fast/slow model backtest on test split")
+def backtest(
+    symbol: Annotated[
+        str,
+        typer.Option("--symbol", "-s", help="回测的合约种类"),
+    ] = "BTC/USDT",
+    period: Annotated[
+        str,
+        typer.Option("--period", "-p", help="回测周期"),
+    ] = "15m",
+    threshold: Annotated[
+        float,
+        typer.Option("--threshold", help="预测阈值；高于阈值做多，低于负阈值做空。"),
+    ] = 0.0,
+    fee_rate: Annotated[
+        float,
+        typer.Option("--fee-rate", help="单边手续费率，例如 0.0004 表示 4 bps。"),
+    ] = 0.0004,
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="回测网页输出路径"),
+    ] = None,
+):
+    result, report_path = run_backtest(symbol, period, threshold, fee_rate, output)
+    typer.echo(format_backtest_metrics(result))
+    typer.echo(f"backtest report saved to {report_path}")
 
 def main() -> None:
     """Run the Typer application."""
