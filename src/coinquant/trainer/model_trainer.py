@@ -41,6 +41,7 @@ class ModelTrainer:
 
         sequence_length = int(tools.get_setting(settings.data_set, "sequence_length", 128))
         feature_columns = self._resolve_feature_columns(train_df)
+        model_params = self._build_model_params(len(feature_columns))
 
         train_dataset = SequenceDataset(train_df, feature_columns, label_column, sequence_length)
         val_dataset = SequenceDataset(valid_df, feature_columns, label_column, sequence_length)
@@ -50,7 +51,7 @@ class ModelTrainer:
         if len(val_dataset) == 0:
             raise ValueError("validation dataset is empty after sequence filtering")
 
-        batch_size = int(self._model_params_config().get("batch_size", 1024))
+        batch_size = int(model_params.get("batch_size", 1024))
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -62,7 +63,7 @@ class ModelTrainer:
             shuffle=False,
         )
 
-        model = self._build_model(len(feature_columns))
+        model = self._build_model(model_params)
         save_path = self._checkpoint_path()
         evals_result: dict[str, list[float]] = {}
 
@@ -77,20 +78,22 @@ class ModelTrainer:
         )
         
         model.fit(train_loader, valid_loader, evals_result=evals_result, save_path=save_path)
-        self._save_metadata(save_path, feature_columns, label_column, evals_result)
+        self._save_metadata(save_path, feature_columns, label_column, model_params, evals_result)
         
         return save_path
 
-    def _build_model(self, d_feat: int) -> TransformerModel:
+    def _build_model(self, model_params: dict[str, Any]) -> TransformerModel:
         model_class = MODEL_REGISTRY.get(self.model_name)
         if model_class is None:
             supported = ", ".join(sorted(MODEL_REGISTRY))
             raise ValueError(f"unsupported model {self.model_name!r}; supported models: {supported}")
 
+        return model_class(**model_params)
+
+    def _build_model_params(self, d_feat: int) -> dict[str, Any]:
         params = dict(self._model_params_config())
         params["d_feat"] = d_feat
-
-        return model_class(**params)
+        return params
 
     def _model_params_config(self) -> dict[str, Any]:
         params_config = self.model_config.get("params", {})
@@ -128,6 +131,7 @@ class ModelTrainer:
         save_path: Path,
         feature_columns: list[str],
         label_column: str,
+        model_params: dict[str, Any],
         evals_result: dict[str, list[float]],
     ) -> None:
         metadata = {
@@ -137,6 +141,7 @@ class ModelTrainer:
             "label_mode": self.label_mode.value,
             "feature_columns": feature_columns,
             "label_column": label_column,
+            "model_params": model_params,
             "evals_result": evals_result,
         }
         metadata_path = save_path.with_suffix(".json")

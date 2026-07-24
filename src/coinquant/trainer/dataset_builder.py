@@ -71,7 +71,7 @@ class DatasetBuilder:
 
     def _build_labels(self, df):
         df['label_close_fast'] = 100 * np.log(df['ma3'].shift(-self._future_length) / df['ma3'])
-        df['label_close_slow'] = 100 * np.log(df['ma3'].shift(-self._future_length ** 2) / df['ma3'])
+        df['label_close_slow'] = 100 * np.log(df['ma5'].shift(-self._future_length ** 2) / df['ma5'])
         # fast_weight = 1.0
         # slow_weight = 1.0
         # total_fast_weight = 0.0

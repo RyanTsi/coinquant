@@ -87,7 +87,10 @@ def backtest(
     ] = "15m",
     threshold: Annotated[
         float,
-        typer.Option("--threshold", help="预测阈值；高于阈值做多，低于负阈值做空。"),
+        typer.Option(
+            "--threshold",
+            help="预测阈值；上一根高于阈值且本根回落则下一根开盘做空，上一根低于负阈值且本根回升则下一根开盘做多，并持仓到下一次操作。",
+        ),
     ] = 0.0,
     fee_rate: Annotated[
         float,

@@ -61,6 +61,14 @@ def _frame_records(df: pd.DataFrame) -> list[dict[str, Any]]:
         "label_close_slow",
         "pred_fast",
         "pred_slow",
+        "pred_prev_fast",
+        "pred_prev_slow",
+        "pred_delta_fast",
+        "pred_delta_slow",
+        "signal_fast",
+        "signal_slow",
+        "action_fast",
+        "action_slow",
         "next_return",
         "position_fast",
         "position_slow",
@@ -472,6 +480,18 @@ function fmtPred(value) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   return `${Number(value).toFixed(4)}%`;
 }
+function fmtSide(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  if (Number(value) > 0) return "LONG";
+  if (Number(value) < 0) return "SHORT";
+  return "FLAT";
+}
+function fmtAction(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  if (Number(value) > 0) return "LONG";
+  if (Number(value) < 0) return "SHORT";
+  return "NONE";
+}
 function activeModels() {
   if (state.model === "both") return ["fast", "slow"];
   return [state.model];
@@ -756,9 +776,15 @@ function updateTooltip(event) {
     <div class="tooltip-row"><span>Low</span><span>${fmtNumber(row.low, 2)}</span></div>
     <div class="tooltip-row"><span>Close</span><span>${fmtNumber(row.close, 2)}</span></div>
     <div class="tooltip-row"><span>Fast 预测</span><span>${fmtPred(row.pred_fast)}</span></div>
+    <div class="tooltip-row"><span>Fast 变化</span><span>${fmtPred(row.pred_delta_fast)}</span></div>
+    <div class="tooltip-row"><span>Fast 信号</span><span>${fmtAction(row.signal_fast)}</span></div>
+    <div class="tooltip-row"><span>Fast 操作</span><span>${fmtAction(row.action_fast)}</span></div>
+    <div class="tooltip-row"><span>Fast 持仓/权益</span><span>${fmtSide(row.position_fast)} / ${fmtNumber(row.equity_fast, 3)}</span></div>
     <div class="tooltip-row"><span>Slow 预测</span><span>${fmtPred(row.pred_slow)}</span></div>
-    <div class="tooltip-row"><span>Fast 持仓/权益</span><span>${row.position_fast} / ${fmtNumber(row.equity_fast, 3)}</span></div>
-    <div class="tooltip-row"><span>Slow 持仓/权益</span><span>${row.position_slow} / ${fmtNumber(row.equity_slow, 3)}</span></div>
+    <div class="tooltip-row"><span>Slow 变化</span><span>${fmtPred(row.pred_delta_slow)}</span></div>
+    <div class="tooltip-row"><span>Slow 信号</span><span>${fmtAction(row.signal_slow)}</span></div>
+    <div class="tooltip-row"><span>Slow 操作</span><span>${fmtAction(row.action_slow)}</span></div>
+    <div class="tooltip-row"><span>Slow 持仓/权益</span><span>${fmtSide(row.position_slow)} / ${fmtNumber(row.equity_slow, 3)}</span></div>
   `;
   drawPrice();
   drawPredictions();

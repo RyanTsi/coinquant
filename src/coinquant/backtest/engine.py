@@ -9,9 +9,15 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import DataLoader
 
 from coinquant.config import settings
+from coinquant.backtest.strategy import (
+    build_turning_point_signal,
+    carry_position_until_next_action,
+    shift_signal_to_next_open,
+)
 from coinquant.trainer.dataset_builder import DatasetBuilder
 from coinquant.trainer.model_trainer import LabelMode, MODEL_REGISTRY
 from coinquant.trainer.sequence_dataset import SequenceDataset
@@ -38,7 +44,7 @@ class BacktestResult:
 
 
 class BacktestEngine:
-    """Run simple sign-based backtests for the fast and slow trained models."""
+    """Run turning-point backtests for the fast and slow trained models."""
 
     def __init__(
         self,
@@ -115,9 +121,19 @@ class BacktestEngine:
         if len(dataset) == 0:
             raise ValueError(f"test dataset has no valid sequences for {label_mode.value}")
 
-        model = self._build_model(model_name, len(feature_columns))
-        model.load(checkpoint_path)
-        model_params = self._model_params_config(model_name)
+        has_saved_model_params = isinstance(metadata.get("model_params"), dict)
+        model_params = self._metadata_model_params(metadata, model_name, len(feature_columns))
+        if not has_saved_model_params and model_name == "transformer":
+            model_params = self._infer_transformer_model_params(checkpoint_path, model_params)
+        model = self._build_model(model_name, model_params)
+        try:
+            model.load(checkpoint_path)
+        except RuntimeError:
+            if model_name != "transformer":
+                raise
+            model_params = self._infer_transformer_model_params(checkpoint_path, model_params)
+            model = self._build_model(model_name, model_params)
+            model.load(checkpoint_path)
         batch_size = int(model_params.get("batch_size", 1024))
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
         values = np.asarray(model.predict(loader), dtype=np.float64).reshape(-1)
@@ -167,8 +183,7 @@ class BacktestEngine:
 
     def _attach_trading_results(self, rows: pd.DataFrame) -> pd.DataFrame:
         rows = rows.copy()
-        rows["next_close"] = rows["close"].shift(-1)
-        rows["next_return"] = rows["next_close"] / rows["close"] - 1.0
+        rows["next_return"] = rows["open"].shift(-1) / rows["open"] - 1.0
         rows = rows.iloc[:-1].copy()
         if rows.empty:
             raise ValueError("not enough rows to calculate next-bar backtest returns")
@@ -176,11 +191,9 @@ class BacktestEngine:
         for label_mode in (LabelMode.fast, LabelMode.slow):
             mode = label_mode.value
             pred = rows[f"pred_{mode}"].to_numpy(dtype=np.float64)
-            position = np.where(
-                pred > self.threshold,
-                1,
-                np.where(pred < -self.threshold, -1, 0),
-            ).astype(np.int8)
+            prev_pred, pred_delta, signal = build_turning_point_signal(pred, self.threshold)
+            action = shift_signal_to_next_open(signal)
+            position = carry_position_until_next_action(action)
             previous_position = np.concatenate(([0], position[:-1]))
             turnover = np.abs(position - previous_position).astype(np.float64)
             gross_return = position * rows["next_return"].to_numpy(dtype=np.float64)
@@ -191,6 +204,10 @@ class BacktestEngine:
             drawdown = equity / running_max - 1.0
 
             rows[f"position_{mode}"] = position
+            rows[f"signal_{mode}"] = signal
+            rows[f"action_{mode}"] = action
+            rows[f"pred_prev_{mode}"] = prev_pred
+            rows[f"pred_delta_{mode}"] = pred_delta
             rows[f"turnover_{mode}"] = turnover
             rows[f"gross_return_{mode}"] = gross_return
             rows[f"net_return_{mode}"] = net_return
@@ -271,15 +288,55 @@ class BacktestEngine:
         symbol = self.symbol.replace("/", "_").replace(":", "_")
         return self.model_dir / f"{model_name}_{symbol}_{self.period}_{label_mode.value}.pt"
 
-    def _build_model(self, model_name: str, d_feat: int):
+    def _metadata_model_params(
+        self,
+        metadata: dict[str, Any],
+        model_name: str,
+        d_feat: int,
+    ) -> dict[str, Any]:
+        params = metadata.get("model_params")
+        if not isinstance(params, dict):
+            params = self._model_params_config(model_name)
+        params = dict(params)
+        params["d_feat"] = d_feat
+        return params
+
+    def _build_model(self, model_name: str, model_params: dict[str, Any]):
         model_class = MODEL_REGISTRY.get(model_name)
         if model_class is None:
             supported = ", ".join(sorted(MODEL_REGISTRY))
             raise ValueError(f"unsupported model {model_name!r}; supported models: {supported}")
 
-        params = dict(self._model_params_config(model_name))
-        params["d_feat"] = d_feat
-        return model_class(**params)
+        return model_class(**model_params)
+
+    def _infer_transformer_model_params(
+        self,
+        checkpoint_path: Path,
+        base_params: dict[str, Any],
+    ) -> dict[str, Any]:
+        state = torch.load(checkpoint_path, map_location="cpu")
+        if not isinstance(state, dict):
+            raise ValueError(f"checkpoint state must be a dict: {checkpoint_path}")
+
+        params = dict(base_params)
+        if "feature_layer.0.weight" in state:
+            params["d_linear"] = int(state["feature_layer.0.weight"].shape[0])
+        if "feature_layer.2.weight" in state:
+            params["d_model"] = int(state["feature_layer.2.weight"].shape[0])
+        if "transformer_encoder.layers.0.linear1.weight" in state:
+            params["dim_feedforward"] = int(
+                state["transformer_encoder.layers.0.linear1.weight"].shape[0]
+            )
+
+        layer_indices = set()
+        for key in state:
+            match = re.match(r"transformer_encoder\.layers\.(\d+)\.", key)
+            if match:
+                layer_indices.add(int(match.group(1)))
+        if layer_indices:
+            params["num_layers"] = max(layer_indices) + 1
+
+        return params
 
     def _model_params_config(self, model_name: str) -> dict[str, Any]:
         model_config = self._load_model_config(model_name)
@@ -416,4 +473,3 @@ def _finite_or_none(value: float | int | None) -> float | int | None:
             return None
         return float(value)
     return value
-
