@@ -22,7 +22,7 @@
         "end_date": "2030-12-31T23:59:59Z"
     },
     "data_set": {
-        "rolling_window": 128,
+        "rolling_window": 512,
         "future_length": 4,
         "sequence_length": 128,
         "fast_rate": 0.85,

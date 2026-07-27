@@ -70,29 +70,15 @@ class DatasetBuilder:
         return df
 
     def _build_labels(self, df):
-        df['label_close_fast'] = 100 * np.log(df['ma3'].shift(-self._future_length) / df['ma3'])
-        df['label_close_slow'] = 100 * np.log(df['ma5'].shift(-self._future_length ** 2) / df['ma5'])
-        # fast_weight = 1.0
-        # slow_weight = 1.0
-        # total_fast_weight = 0.0
-        # total_slow_weight = 0.0
-        # for i in range(1, self._future_length + 1):
-        #     df['label_close_fast'] += fast_weight * df['feat_ret_close'].shift(-i)
-        #     total_fast_weight += fast_weight
-        #     fast_weight *= self._fast_rate
-
-        # for i in range(1, self._future_length ** 2 + 1):
-        #     df['label_close_slow'] += slow_weight * df['feat_ret_close'].shift(-i)
-        #     total_slow_weight += slow_weight
-        #     slow_weight *= self._slow_rate
-
-        # df['label_close_fast'] /= total_fast_weight
-        # df['label_close_slow'] /= total_slow_weight
+        df['close_fast'] = 100 * np.log(df['ma3'].shift(-self._future_length) / df['ma3'])
+        df['close_slow'] = 100 * np.log(df['ma5'].shift(-self._future_length ** 2) / df['ma5'])
+        self._z_rolling_score(df, 'close_fast', 'label')
+        self._z_rolling_score(df, 'close_slow', 'label')
         
         return df
     
-    def _z_rolling_score(self, df, column_name):
-        res_column_name = f"feat_z_score_{column_name}"
+    def _z_rolling_score(self, df, column_name, prefix='feat'):
+        res_column_name = f"{prefix}_z_score_{column_name}"
         df[res_column_name] = (df[column_name] - df[column_name].rolling(self._window).mean()) / df[column_name].rolling(self._window).std()
 
     def _split_by_time(self, df):
@@ -120,7 +106,7 @@ class DatasetBuilder:
     def _trim_future_boundary(self, df):
         if len(df) <= self._future_length ** 2:
             return df.iloc[:0].copy()
-        return df.iloc[:-self._future_length ** 2].dropna(subset=["label_close_slow"]).copy()
+        return df.iloc[:-self._future_length ** 2].dropna(subset=["label_z_score_close_slow"]).copy()
 
 def test():
     datasetBuilder = DatasetBuilder("BTC/USDT", "4h")

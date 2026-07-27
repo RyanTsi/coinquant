@@ -160,8 +160,8 @@ class BacktestEngine:
             "low",
             "close",
             "volume",
-            "label_close_fast",
-            "label_close_slow",
+            "label_z_score_close_fast",
+            "label_z_score_close_slow",
         ]
         columns = [column for column in base_columns if column in test_df.columns]
         rows = test_df.loc[:, columns].copy()
@@ -223,7 +223,7 @@ class BacktestEngine:
     ) -> dict[str, float | int | str | None]:
         mode = label_mode.value
         pred = rows[f"pred_{mode}"]
-        label = rows[f"label_close_{mode}"]
+        label = rows[f"label_z_score_close_{mode}"]
         returns = rows[f"net_return_{mode}"].to_numpy(dtype=np.float64)
         gross_returns = rows[f"gross_return_{mode}"].to_numpy(dtype=np.float64)
         equity = rows[f"equity_{mode}"].to_numpy(dtype=np.float64)
