@@ -14,11 +14,11 @@ from coinquant.trainer.model_trainer import LabelMode
 app = typer.Typer(help="BTC quantitative research command line tools.")
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
-@app.command(help="database staust")
-def staust():
+@app.command(help="database status")
+def status():
     handler = FetchHandler(FetchMode.incremental)
     count = handler.count()
-    print(f"totle rows: {count}")
+    print(f"total rows: {count}")
 
 @app.command(help="fetch historical data")
 def fetch(

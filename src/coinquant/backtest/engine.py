@@ -438,27 +438,27 @@ def _profit_factor(returns: np.ndarray) -> float | None:
 
 def _average_holding_bars(position: np.ndarray) -> float | None:
     lengths: list[int] = []
-    current_position = 0.0
-    current_length = 0
+    current_postion_position = 0.0
+    current_postion_length = 0
 
     for value in position:
         if value == 0:
-            if current_position != 0:
-                lengths.append(current_length)
-            current_position = 0.0
-            current_length = 0
+            if current_postion_position != 0:
+                lengths.append(current_postion_length)
+            current_postion_position = 0.0
+            current_postion_length = 0
             continue
 
-        if value == current_position:
-            current_length += 1
+        if value == current_postion_position:
+            current_postion_length += 1
         else:
-            if current_position != 0:
-                lengths.append(current_length)
-            current_position = value
-            current_length = 1
+            if current_postion_position != 0:
+                lengths.append(current_postion_length)
+            current_postion_position = value
+            current_postion_length = 1
 
-    if current_position != 0:
-        lengths.append(current_length)
+    if current_postion_position != 0:
+        lengths.append(current_postion_length)
 
     if not lengths:
         return None
@@ -473,3 +473,58 @@ def _finite_or_none(value: float | int | None) -> float | int | None:
             return None
         return float(value)
     return value
+
+from coinquant.backtest.account import Account
+from coinquant.backtest.position import Position
+
+@dataclass
+class ExecutionConfig:
+    fee_rate: float = 0.0005
+    slippage: float = 0.0
+    leverage: float = 10.0
+    contract_size: float = 1.0
+
+class ExecutionEngine:
+
+    def __init__(self, config: ExecutionConfig):
+        self.cfg = config
+
+    def execute(self, target_position: float, price: float, position: Position, account: Account):
+        current_postion = position.position
+
+        trade = target_position-current_postion
+
+        if trade > 0:
+            self.buy(trade,...)
+
+        elif trade < 0:
+            self.sell(-trade,...)
+
+        self.mark(...)
+
+    def buy(self, trade):
+        pass
+    def sell(self, trade):
+        pass
+
+    def _increase_long():
+        pass
+    def _reduce_long():
+        pass
+    def _increase_short():
+        pass
+    def _reduce_short():
+        pass
+    def _reverse_to_long():
+        pass
+    def _reverse_to_short():
+        pass
+    def mark_to_market():
+        pass
+    def calc_fee():
+        pass
+    def calc_margin():
+        pass
+    def calc_average_price():
+        pass
+    def calc_realized_pnl():

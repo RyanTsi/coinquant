@@ -17,6 +17,8 @@ dependencies = [
     "torch>=2.0",
     "Dynaconf>=3.3",
     "ccxt>=4.5",
+    "gymnasium>=1.0",
+    "stable-baselines3>=2.7",
 ]
 
 [project.scripts]
