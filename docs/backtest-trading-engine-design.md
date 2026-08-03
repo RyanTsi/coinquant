@@ -79,7 +79,7 @@ Account   ExecutionEngine  Position
 | 配置 | 字段 |
 | --- | --- |
 | `AccountConfig` | `initial_balance` |
-| `PositionConfig` | `leverage`、`contract_size`、`maintenance_margin_rate` |
+| `PositionConfig` | `leverage`、`contract_size`、`margin_rate` |
 | `ExecutionConfig` | `fee_rate`、`slippage_rate`、`quantity_epsilon`、`liquidation_fee_rate` |
 | `BacktestConfig` | `force_close_at_end`、`annualization_factor` |
 
@@ -272,7 +272,7 @@ def run_backtest(
 
 ## 7. 统一公式与风险
 
-以下公式适用于 USDT 本位线性合约；`contract_size`、`leverage` 和 `maintenance_margin_rate` 来自 `PositionConfig`。
+以下公式适用于 USDT 本位线性合约；`contract_size`、`leverage` 和 `margin_rate` 来自 `PositionConfig`。
 
 ### 7.1 成交与持仓
 
@@ -296,7 +296,7 @@ unrealized_pnl =
 
 notional = abs(position) × mark_price × contract_size
 initial_margin = notional / leverage
-maintenance_margin = notional × maintenance_margin_rate
+maintenance_margin = notional × margin_rate
 
 funding_payment =
     position × mark_price × contract_size × funding_rate
