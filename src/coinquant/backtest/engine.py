@@ -528,3 +528,4 @@ class ExecutionEngine:
     def calc_average_price():
         pass
     def calc_realized_pnl():
+        pass

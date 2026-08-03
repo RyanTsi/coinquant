@@ -4,7 +4,6 @@ from dataclasses import dataclass
 @dataclass
 class AccountConfig:
     initial_balance: float = 10000.0
-    leverage: float = 10.0
     maintenance_margin_rate: float = 0.005
 
 class Account:
