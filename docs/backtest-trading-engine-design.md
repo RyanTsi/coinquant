@@ -55,6 +55,8 @@
 
 `目标合约数 = 目标名义杠杆 × 当前权益 / (参考价格 × contract_size)`
 
+`TargetInstruction` 不持有杠杆。第一版在单次回测中固定使用账户杠杆，执行时校验并记录实际使用值。未来若支持动态调整，应使用独立账户设置事件，而不是单笔目标属性。
+
 ## 3. 架构、配置与状态所有权
 
 ```text
@@ -78,17 +80,16 @@ Account   ExecutionEngine  Position
 
 | 配置 | 字段 |
 | --- | --- |
-| `AccountConfig` | `initial_balance` |
-| `PositionConfig` | `leverage`、`contract_size`、`margin_rate` |
-| `ExecutionConfig` | `fee_rate`、`slippage_rate`、`quantity_epsilon`、`liquidation_fee_rate` |
+| `AccountConfig` | `initial_balance`、`leverage` |
+| `ExecutionConfig` | `contract_size`、`margin_rate`、`fee_rate`、`slippage_rate`、`quantity_epsilon`、`liquidation_fee_rate` |
 | `BacktestConfig` | `force_close_at_end`、`annualization_factor` |
 
-`PositionConfig` 不可变。合约面值、杠杆和维持保证金率共同决定持仓估值，因此不放入 `Account`。未来支持多品种时可以再抽取 `ContractSpec`，但账户仍只接收聚合结果。
+杠杆是账户对当前品种生效的保证金设置；第一版只有一个品种，因此由 `AccountConfig` 提供，并在单次回测中保持不变。未来支持多品种时可演化为账户内按品种索引的杠杆设置。`contract_size` 和 `margin_rate` 是执行估值使用的合约规则，归入 `ExecutionConfig`。
 
 ### 3.2 状态所有权
 
-- `Position`：持仓数量、均价、标记估值、初始保证金和维持保证金。
-- `Account`：余额、账户累计成本、聚合权益和账户级风险状态。
+- `Position`：持仓数量、均价、标记估值、初始保证金和维持保证金；不保存杠杆或配置对象。
+- `Account`：当前杠杆、余额、账户累计成本、聚合权益和账户级风险状态。
 - `ExecutionEngine`：验证并原子地转换 `Position` 与 `Account`，自身只长期持有执行配置。
 - `BacktestState`：核心对象、时间游标、待执行目标、运行状态和账本；不复制财务字段。
 - 指标和报告：只读取冻结账本，不修改交易状态。
@@ -107,7 +108,7 @@ Account.maintenance_margin == Position.maintenance_margin
 
 ### 4.1 `Position`
 
-`Position` 是实例级 dataclass，并持有不可变的 `PositionConfig`。
+`Position` 是实例级 dataclass，只保存持仓状态。
 
 | 字段 | 含义 | 空仓值 |
 | --- | --- | --- |
@@ -120,7 +121,7 @@ Account.maintenance_margin == Position.maintenance_margin
 | `maintenance_margin` | 维持保证金 | `0` |
 | `holding_steps` | 当前方向连续持有的完整 bar 数 | `0` |
 
-`Position.revalue(mark_price)` 一次性刷新 `mark_price`、`notional`、`unrealized_pnl`、`initial_margin` 和 `maintenance_margin`。它不读取账户余额，也不判断强平。
+`Position` 不自行读取账户或执行配置。`ExecutionEngine` 估值后，一次性刷新其 `mark_price`、`notional`、`unrealized_pnl`、`initial_margin` 和 `maintenance_margin`。
 
 持仓规则：
 
@@ -135,6 +136,7 @@ Account.maintenance_margin == Position.maintenance_margin
 
 | 字段 | 含义 |
 | --- | --- |
+| `leverage` | 当前品种生效的杠杆 |
 | `balance` | 已结算余额 |
 | `equity` | 余额加未实现盈亏 |
 | `available_balance` | 权益减初始保证金占用 |
@@ -147,7 +149,7 @@ Account.maintenance_margin == Position.maintenance_margin
 | `margin_ratio` | 维持保证金占权益的比例 |
 | `is_liquidated` | 是否已触发强平 |
 
-`Account.update` 接收持仓已计算好的未实现盈亏、初始保证金和维持保证金，统一刷新权益、可用余额、风险比率和强平状态。`Account` 不接收杠杆、合约面值或维持保证金率，也不自行计算持仓保证金。
+`Account.update` 接收执行引擎已计算好的未实现盈亏、初始保证金和维持保证金，统一刷新权益、可用余额、风险比率和强平状态。`Account` 保存杠杆，但不自行计算持仓保证金。
 
 `margin_ratio` 和 `is_liquidated` 属于 `Account`，因为全仓风险以账户总权益覆盖全部持仓维持保证金为准。
 
@@ -158,12 +160,12 @@ Account.maintenance_margin == Position.maintenance_margin
 | 行为 | 结果 |
 | --- | --- |
 | 执行目标仓位 | 应用滑点、费用和持仓转换，原子更新持仓与账户 |
-| 盯市 | 调用 `Position.revalue`，聚合到账户并检查风险 |
+| 盯市 | 使用账户杠杆和执行配置重估持仓，再聚合到账户并检查风险 |
 | 结算资金费 | 更新余额后重新盯市 |
 | 风险强平 | 关闭持仓、收取费用并保持强平标记 |
 | 完成 bar | 非空仓的 `holding_steps` 增加一次 |
 
-`ExecutionEngine` 不读取历史数据、不推进时间、不运行模型、不解释信号、不计算报告指标，也不写数据库或报告文件。买卖和各种仓位转换可以有独立路由，但均价、盈亏和费用公式只能有一套实现。
+下单时，`ExecutionEngine` 使用并校验 `Account.leverage`，执行结果记录 `applied_leverage`。单笔目标不能覆盖杠杆。`ExecutionEngine` 不读取历史数据、不推进时间、不运行模型、不解释信号、不计算报告指标，也不写数据库或报告文件。
 
 ### 4.4 `BacktestState`
 
@@ -185,7 +187,6 @@ Account.maintenance_margin == Position.maintenance_margin
 ```python
 def create_backtest_state(
     account_config: AccountConfig,
-    position_config: PositionConfig,
     execution_config: ExecutionConfig,
     backtest_config: BacktestConfig,
 ) -> BacktestState: ...
@@ -272,7 +273,7 @@ def run_backtest(
 
 ## 7. 统一公式与风险
 
-以下公式适用于 USDT 本位线性合约；`contract_size`、`leverage` 和 `margin_rate` 来自 `PositionConfig`。
+以下公式适用于 USDT 本位线性合约；`leverage` 来自 `Account`，`contract_size` 和 `margin_rate` 来自 `ExecutionConfig`。
 
 ### 7.1 成交与持仓
 
@@ -337,7 +338,7 @@ bar 内多仓使用 `low`、空头使用 `high` 检查强平。触发后按不�
 
 ## 8. 结果、账本与指标
 
-每次执行或风险事件返回不可变结果，至少记录时间、事件类型、请求及实际数量、成交价格和名义价值、已实现盈亏、费用、拒绝或降级原因，以及事件后的账户和持仓快照。
+每次执行或风险事件返回不可变结果，至少记录时间、事件类型、请求及实际数量、实际使用杠杆、成交价格和名义价值、已实现盈亏、费用、拒绝或降级原因，以及事件后的账户和持仓快照。
 
 | 账本 | 内容 |
 | --- | --- |
@@ -398,7 +399,7 @@ bar 内多仓使用 `low`、空头使用 `high` 检查强平。触发后按不�
 | 文件 | 责任 |
 | --- | --- |
 | `backtest/account.py` | `AccountConfig`、`Account`、账户快照 |
-| `backtest/position.py` | `PositionConfig`、`Position`、持仓估值与快照 |
+| `backtest/position.py` | `Position`、持仓状态与快照 |
 | `backtest/execution.py` | `ExecutionConfig`、`ExecutionEngine`、执行结果 |
 | `backtest/simulation.py` | 标准输入、`BacktestState`、编排函数与新 `BacktestResult` |
 | `backtest/metrics.py` | 从冻结账本计算指标 |
@@ -406,8 +407,8 @@ bar 内多仓使用 `low`、空头使用 `high` 检查强平。触发后按不�
 
 迁移顺序：
 
-1. 将 `Position` 改为实例 dataclass，新增 `PositionConfig`、`notional`、`initial_margin` 和 `maintenance_margin`。
-2. 删除 `Account.update` 内部的保证金公式，改为聚合持仓估值，并修正 `margin_ratio` 与强平粘性。
+1. 将 `Position` 改为实例 dataclass，新增 `notional`、`initial_margin` 和 `maintenance_margin`，不保存杠杆或配置对象。
+2. 将 `leverage` 放入 `AccountConfig/Account`；删除 `Account.update` 内部的保证金公式，改为接收执行引擎的估值结果，并修正 `margin_ratio` 与强平粘性。
 3. 将 `ExecutionEngine` 移到 `execution.py`，实现原子成交状态机。
 4. 在 `simulation.py` 实现输入值对象、`BacktestState` 和编排函数。
 5. 改造策略、handler、指标和报告以使用新结果。
@@ -419,7 +420,7 @@ bar 内多仓使用 `low`、空头使用 `high` 检查强平。触发后按不�
 
 | 层级 | 必须覆盖 |
 | --- | --- |
-| 公式单元测试 | 多空盈亏、加权均价、滑点、费用、资金费、两类保证金和 `margin_ratio` 边界 |
+| 公式单元测试 | 多空盈亏、加权均价、滑点、费用、资金费、不同杠杆下的初始保证金和 `margin_ratio` 边界 |
 | 状态转换测试 | 开仓、加仓、减仓、全平、双向反手、拒绝和反手降级 |
 | 属性测试 | 账户恒等式、拆单一致性、多空对称、同输入可复现 |
 | 编排集成测试 | `T+1` 成交、跳空与盘中强平、期末处理、最后目标不成交 |
