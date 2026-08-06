@@ -114,7 +114,7 @@ class RewardCalculator:
         )
         drawdown_penalty = self.config.drawdown_penalty_rate * drawdown
         liquidation_penalty = self.config.liquidation_penalty if liquidated else 0.0
-        raw_reward = base_reward - risk_penalty - drawdown_penalty - liquidation_penalty
+        raw_reward = base_reward
         return RewardBreakdown(
             reward=self.config.reward_scale * raw_reward,
             raw_reward=raw_reward,

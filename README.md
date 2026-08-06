@@ -2,6 +2,14 @@
 
 # 运行环境为conda quant
 
+## RL 训练
+
+```bash
+coinquant train-rl --symbol BTC/USDT --period 1h --timesteps 100000
+```
+
+CLI 只暴露品种、周期和训练总步数；PPO rollout、batch 和验证频率会根据总步数自动设置，其余交易和奖励参数使用 `RLTrainingConfig` 的统一默认值。
+
 ## 数据处理
 | 数据             | 推荐处理                      |
 | -------------- | ------------------------- |

@@ -4,9 +4,8 @@ from typing import Annotated
 import typer
 
 from coinquant.handler.fetch_handler import FetchMode, FetchHandler
-from coinquant.handler.train_handler import train_model
+from coinquant.handler.train_handler import train_model, train_rl_model
 from coinquant.handler.export_handler import export_samples_to_csv
-from coinquant.handler.backtest_handler import format_backtest_metrics, run_backtest
 
 from coinquant.config import settings
 from coinquant.trainer.model_trainer import LabelMode
@@ -74,6 +73,38 @@ def train(
 ):
     save_path = train_model(symbol, period, label_mode)
     typer.echo(f"model saved to {save_path}")
+
+
+@app.command("train-rl", help="train and evaluate the PPO trading agent")
+def train_rl_command(
+    symbol: Annotated[
+        str,
+        typer.Option("--symbol", "-s", help="训练的合约种类"),
+    ] = "BTC/USDT",
+    period: Annotated[
+        str,
+        typer.Option("--period", "-p", help="训练周期"),
+    ] = "1h",
+    timesteps: Annotated[
+        int,
+        typer.Option("--timesteps", "-n", min=2, help="PPO 训练总步数"),
+    ] = 100_000,
+):
+    artifacts = train_rl_model(symbol, period, timesteps)
+    typer.echo(f"RL run saved to {artifacts.run_dir}")
+    for split, metrics in (
+        ("train", artifacts.train_metrics),
+        ("valid", artifacts.valid_metrics),
+        ("test", artifacts.test_metrics),
+    ):
+        total_return = float(metrics["total_return"])
+        max_drawdown = float(metrics["max_drawdown"])
+        sharpe = metrics.get("sharpe")
+        sharpe_text = "n/a" if sharpe is None else f"{float(sharpe):.3f}"
+        typer.echo(
+            f"{split}: return={total_return:.2%}, "
+            f"max_drawdown={max_drawdown:.2%}, sharpe={sharpe_text}"
+        )
 
 
 def main() -> None:
