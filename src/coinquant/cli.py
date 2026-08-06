@@ -75,35 +75,6 @@ def train(
     save_path = train_model(symbol, period, label_mode)
     typer.echo(f"model saved to {save_path}")
 
-@app.command(help="run fast/slow model backtest on test split")
-def backtest(
-    symbol: Annotated[
-        str,
-        typer.Option("--symbol", "-s", help="回测的合约种类"),
-    ] = "BTC/USDT",
-    period: Annotated[
-        str,
-        typer.Option("--period", "-p", help="回测周期"),
-    ] = "15m",
-    threshold: Annotated[
-        float,
-        typer.Option(
-            "--threshold",
-            help="预测阈值；上一根高于阈值且本根回落则下一根开盘做空，上一根低于负阈值且本根回升则下一根开盘做多，并持仓到下一次操作。",
-        ),
-    ] = 0.0,
-    fee_rate: Annotated[
-        float,
-        typer.Option("--fee-rate", help="单边手续费率，例如 0.0004 表示 4 bps。"),
-    ] = 0.0004,
-    output: Annotated[
-        str | None,
-        typer.Option("--output", "-o", help="回测网页输出路径"),
-    ] = None,
-):
-    result, report_path = run_backtest(symbol, period, threshold, fee_rate, output)
-    typer.echo(format_backtest_metrics(result))
-    typer.echo(f"backtest report saved to {report_path}")
 
 def main() -> None:
     """Run the Typer application."""
