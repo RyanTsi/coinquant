@@ -19,9 +19,13 @@ class DatasetBuilder:
         self._fast_rate = settings.data_set.fast_rate
         self._slow_rate = settings.data_set.slow_rate
 
-    def build_from_db(self):
+    def build_from_db(self, begin_time=None, end_time=None):
         db = DataBase()
-        data = db.query(self._period, self._symbol, self._begin_time, self._end_time)
+        if begin_time is None:
+            begin_time = self._begin_time
+        if end_time is None:
+            end_time = self._end_time
+        data = db.query(self._period, self._symbol, begin_time, end_time)
         df = pd.DataFrame(data, columns=KLINE_COLUMNS)
         df = self._build_features(df)
         self._build_labels(df)

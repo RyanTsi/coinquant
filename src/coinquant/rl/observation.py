@@ -7,11 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
-
-try:
-    import pandas as pd
-except ImportError:  # pragma: no cover - pandas is a project dependency
-    pd = None  # type: ignore[assignment]
+import pandas as pd
 
 
 DEFAULT_BASIC_FEATURE_COLUMNS = (

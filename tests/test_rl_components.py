@@ -73,8 +73,9 @@ def test_reward_breakdown_uses_equity_return_once():
     breakdown = calculator.calculate(100.0, 110.0, 1.0, market_return=0.2, drawdown=0.1)
     assert breakdown.net_return == pytest.approx(0.1)
     assert breakdown.gross_return == pytest.approx(0.2)
-    assert breakdown.raw_reward == pytest.approx(0.1 - 0.05)
-    assert breakdown.reward == pytest.approx(0.5)
+    assert breakdown.raw_reward == pytest.approx(0.1)
+    assert breakdown.drawdown_penalty == pytest.approx(0.05)
+    assert breakdown.reward == pytest.approx(1.0)
 
 
 def test_environment_executes_at_next_open_and_closes_at_last_close():

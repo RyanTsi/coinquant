@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import math
 
 def convert_datetime_to_timestamp(dt_str) -> int:
     if dt_str.endswith("Z"):
@@ -13,3 +14,10 @@ def get_setting(section, key: str, default=None):
     if hasattr(section, "get"):
         return section.get(key, default)
     return getattr(section, key, default)
+
+
+def validate_finite(value: float, name: str) -> float:
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be finite")
+    return value

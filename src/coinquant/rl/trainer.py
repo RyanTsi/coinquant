@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from coinquant import utils
 from coinquant.rl.action import ActionConfig
 from coinquant.rl.env import EnvConfig, TradingEnv
 from coinquant.rl.observation import (
@@ -23,13 +24,6 @@ from coinquant.rl.observation import (
 from coinquant.rl.reward import RewardConfig
 
 logger = logging.getLogger(__name__)
-
-
-def _finite(value: float, name: str) -> float:
-    value = float(value)
-    if not np.isfinite(value):
-        raise ValueError(f"{name} must be finite")
-    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +86,7 @@ class RLTrainingConfig:
             "gae_lambda",
             "ent_coef",
         ):
-            value = _finite(getattr(self, name), name)
+            value = utils.validate_finite(getattr(self, name), name)
             if name in {"fee_rate", "slippage_rate", "margin_rate", "liquidation_fee_rate", "drawdown_penalty_rate", "volatility_penalty", "position_penalty", "ent_coef"} and value < 0:
                 raise ValueError(f"{name} must be non-negative")
             if name in {"account_leverage", "max_leverage", "reward_scale", "initial_equity", "learning_rate"} and value <= 0:

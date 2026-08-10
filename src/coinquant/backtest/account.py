@@ -1,14 +1,7 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-
-
-def _validate_finite(value: float, name: str) -> float:
-    value = float(value)
-    if not math.isfinite(value):
-        raise ValueError(f"{name} must be finite")
-    return value
+from coinquant import utils
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,8 +10,8 @@ class AccountConfig:
     leverage: float = 10.0
 
     def __post_init__(self) -> None:
-        balance = _validate_finite(self.initial_balance, "initial_balance")
-        leverage = _validate_finite(self.leverage, "leverage")
+        balance = utils.validate_finite(self.initial_balance, "initial_balance")
+        leverage = utils.validate_finite(self.leverage, "leverage")
         if balance <= 0:
             raise ValueError("initial_balance must be greater than 0")
         if leverage <= 0:
@@ -84,9 +77,9 @@ class Account:
             used_margin = initial_margin
         if used_margin is None:
             raise TypeError("used_margin (or initial_margin) is required")
-        unrealized_pnl = _validate_finite(unrealized_pnl, "unrealized_pnl")
-        used_margin = _validate_finite(used_margin, "used_margin")
-        maintenance_margin = _validate_finite(maintenance_margin, "maintenance_margin")
+        unrealized_pnl = utils.validate_finite(unrealized_pnl, "unrealized_pnl")
+        used_margin = utils.validate_finite(used_margin, "used_margin")
+        maintenance_margin = utils.validate_finite(maintenance_margin, "maintenance_margin")
         if used_margin < 0 or maintenance_margin < 0:
             raise ValueError("margin values must be non-negative")
 
@@ -108,19 +101,19 @@ class Account:
         return trigger
 
     def pay_fee(self, fee: float) -> None:
-        fee = _validate_finite(fee, "fee")
+        fee = utils.validate_finite(fee, "fee")
         if fee < 0:
             raise ValueError("fee must be non-negative")
         self.balance -= fee
         self.total_fee += fee
 
     def pay_funding(self, funding_payment: float) -> None:
-        funding_payment = _validate_finite(funding_payment, "funding_payment")
+        funding_payment = utils.validate_finite(funding_payment, "funding_payment")
         self.balance -= funding_payment
         self.total_funding += funding_payment
 
     def realize_pnl(self, realized_pnl_delta: float) -> None:
-        realized_pnl_delta = _validate_finite(realized_pnl_delta, "realized_pnl_delta")
+        realized_pnl_delta = utils.validate_finite(realized_pnl_delta, "realized_pnl_delta")
         self.balance += realized_pnl_delta
         self.realized_pnl += realized_pnl_delta
 

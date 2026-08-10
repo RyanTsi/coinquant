@@ -291,33 +291,3 @@ class Transformer(nn.Module):
         output = self.decoder_layer(output.transpose(1, 0)[:, -1, :])  # [512, 1]
 
         return output.squeeze(-1)
-
-class MLP(nn.Module):
-
-    def __init__(self, d_feat=30):
-        super().__init__()
-
-        self.net = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(128*d_feat,256),
-            nn.ReLU(),
-            nn.Linear(256,64),
-            nn.ReLU(),
-            nn.Linear(64,1),
-        )
-
-    def forward(self,x):
-        return self.net(x).squeeze(-1)
-    
-class LinearModel(nn.Module):
-
-    def __init__(self, d_feat=30):
-        super().__init__()
-
-        self.linear = nn.Linear(128*d_feat,1)
-
-    def forward(self,x):
-
-        x=x.flatten(1)
-
-        return self.linear(x).squeeze(-1)
