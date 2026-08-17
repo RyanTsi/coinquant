@@ -13,3 +13,5 @@ build/
 *.egg-info/
 data/*.duckdb
 data/*
+gym-anytrading/
+.vscode/
