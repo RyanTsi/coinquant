@@ -1,7 +1,5 @@
 # BTC 量化交易平台
 
-# 运行环境为conda quant
-
 ## RL 训练
 
 ```bash
