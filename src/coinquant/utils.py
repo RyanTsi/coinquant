@@ -1,0 +1,23 @@
+from datetime import datetime, timezone
+import math
+
+def convert_datetime_to_timestamp(dt_str) -> int:
+    if dt_str.endswith("Z"):
+        dt_str = f"{dt_str[:-1]}+00:00"
+    dt = datetime.fromisoformat(dt_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+@staticmethod
+def get_setting(section, key: str, default=None):
+    if hasattr(section, "get"):
+        return section.get(key, default)
+    return getattr(section, key, default)
+
+
+def validate_finite(value: float, name: str) -> float:
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be finite")
+    return value

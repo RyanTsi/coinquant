@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coin-quant"
+version = "0.1.0"
+description = "coin quantitative research"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "duckdb>=1.0",
+    "typer>=0.12",
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "torch>=2.0",
+    "Dynaconf>=3.3",
+    "ccxt>=4.5",
+    "gymnasium>=1.0",
+    "stable-baselines3>=2.7",
+]
+
+[project.scripts]
+coinquant = "coinquant.cli:main"
+
+[tool.setuptools.package-data]
+coinquant = ["configs/*.json"]
