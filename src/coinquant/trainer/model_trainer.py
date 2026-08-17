@@ -78,7 +78,7 @@ class ModelTrainer:
         )
         
         model.fit(train_loader, valid_loader, evals_result=evals_result, save_path=save_path)
-        self._save_metadata(save_path, feature_columns, label_column, model_params, evals_result)
+        self._save_metadata(save_path, feature_columns, label_column, model_params, evals_result, sequence_length)
         
         return save_path
 
@@ -133,6 +133,7 @@ class ModelTrainer:
         label_column: str,
         model_params: dict[str, Any],
         evals_result: dict[str, list[float]],
+        sequence_length: int,
     ) -> None:
         metadata = {
             "model_name": self.model_name,
@@ -141,6 +142,7 @@ class ModelTrainer:
             "label_mode": self.label_mode.value,
             "feature_columns": feature_columns,
             "label_column": label_column,
+            "sequence_length": sequence_length,
             "model_params": model_params,
             "evals_result": evals_result,
         }
