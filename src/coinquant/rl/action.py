@@ -11,6 +11,9 @@ from coinquant import utils
 
 @dataclass(frozen=True, slots=True)
 class ActionConfig:
+    # Despite the historical name, this is the RL target exposure cap as a
+    # multiple of current equity.  The account/contract margin leverage lives
+    # in AccountConfig.leverage and is intentionally separate.
     max_leverage: float = 1.0
     quantity_epsilon: float = 1e-12
 

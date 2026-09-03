@@ -10,10 +10,13 @@ from coinquant.rl.observation import (
     ObservationBuilder,
     ObservationConfig,
     ObservationNormalizer,
+    add_prediction_context_features,
     attach_predictions,
     build_basic_features,
 )
 from coinquant.rl.reward import RewardBreakdown, RewardCalculator, RewardConfig
+from coinquant.rl.ensemble import RLPolicyEnsemble, load_ensemble
+from coinquant.rl.report import RLTradeReport, render_rl_report
 from coinquant.rl.trainer import (
     RLTrainingArtifacts,
     RLTrainingConfig,
@@ -31,6 +34,7 @@ __all__ = [
     "ObservationConfig",
     "ObservationBuilder",
     "ObservationNormalizer",
+    "add_prediction_context_features",
     "DLFeatureProvider",
     "build_basic_features",
     "attach_predictions",
@@ -40,6 +44,10 @@ __all__ = [
     "RewardConfig",
     "RewardBreakdown",
     "RewardCalculator",
+    "RLPolicyEnsemble",
+    "load_ensemble",
+    "RLTradeReport",
+    "render_rl_report",
     "RLTrainingConfig",
     "RLTrainingArtifacts",
     "build_predicted_frames",

@@ -176,6 +176,45 @@ class TransformerModel(BaseModel):
 
         return torch.cat(preds).numpy()
 
+    def predict_with_features(self, data_loader, feature_dim=None):
+        """Return the scalar prediction and the final causal hidden vector.
+
+        Existing checkpoints still predict a scalar label.  The final GRU
+        state is nevertheless a learned representation of the same input
+        sequence and can be exposed to the RL policy as a compact vector.  A
+        pooled latent width can be requested to keep the RL observation
+        reasonably sized; no model weights are changed.
+        """
+
+        if not self.fitted:
+            raise ValueError("model is not fitted yet!")
+        if feature_dim is not None:
+            if isinstance(feature_dim, bool) or int(feature_dim) != feature_dim or feature_dim <= 0:
+                raise ValueError("feature_dim must be a positive integer or None")
+            feature_dim = int(feature_dim)
+        self.model.eval()
+        predictions = []
+        features = []
+        with torch.no_grad():
+            for feature, _ in data_loader:
+                feature = feature.to(self.device)
+                hidden = self.model.forward_features(feature.float())
+                pred = self.model.decoder_layer(hidden).squeeze(-1)
+                if feature_dim is not None:
+                    if feature_dim < hidden.shape[1]:
+                        # Pool contiguous latent bands instead of taking only
+                        # the first coordinates; this keeps a compact vector
+                        # representative of the whole trained state.
+                        chunks = torch.tensor_split(hidden, feature_dim, dim=1)
+                        hidden = torch.stack([chunk.mean(dim=1) for chunk in chunks], dim=1)
+                    else:
+                        hidden = hidden[:, :feature_dim]
+                predictions.append(pred.cpu())
+                features.append(hidden.cpu())
+        if not predictions:
+            return np.empty(0, dtype=np.float32), np.empty((0, 0), dtype=np.float32)
+        return torch.cat(predictions).numpy(), torch.cat(features).numpy()
+
     def save(self, path):
         torch.save(
             self.model.state_dict(),
@@ -254,7 +293,9 @@ class Transformer(nn.Module):
             hidden_size=d_model,
             num_layers=num_layers,
             batch_first=False,
-            dropout=dropout,
+            # PyTorch ignores recurrent dropout for a single-layer GRU and
+            # emits a warning.  Keep the configured dropout for deeper GRUs.
+            dropout=dropout if num_layers > 1 else 0.0,
         )
         self.feature_layer = nn.Sequential(
             nn.Linear(d_feat, d_linear),
@@ -275,6 +316,13 @@ class Transformer(nn.Module):
 
     def forward(self, src):
         # src [N, T, F], [512, 60, 6]
+        output = self.forward_features(src)
+        output = self.decoder_layer(output)
+        return output.squeeze(-1)
+
+    def forward_features(self, src):
+        """Encode a batch and return the final GRU state for representation use."""
+
         src = self.feature_layer(src)  # [512, 60, 8]
 
         # src [N, T, F] --> [T, N, F], [60, 512, 8]
@@ -288,6 +336,4 @@ class Transformer(nn.Module):
         output, _ = self.rnn(output)
 
         # [T, N, F] --> [N, T*F]
-        output = self.decoder_layer(output.transpose(1, 0)[:, -1, :])  # [512, 1]
-
-        return output.squeeze(-1)
+        return output.transpose(1, 0)[:, -1, :]

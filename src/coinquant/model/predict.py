@@ -70,7 +70,11 @@ def predict_latest(
             f"至少需要 {sequence_length} 根有效 K 线，当前只有 {len(window)} 根"
         )
 
-    features = window[feature_columns].to_numpy(dtype=np.float32)
+    features = np.array(
+        window[feature_columns].to_numpy(dtype=np.float32),
+        dtype=np.float32,
+        copy=True,
+    )
     if not np.isfinite(features).all():
         raise ValueError("模型输入包含 NaN 或 inf")
 

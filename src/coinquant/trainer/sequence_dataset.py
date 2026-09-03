@@ -20,8 +20,18 @@ class SequenceDataset(Dataset):
             raise ValueError(f"missing columns: {sorted(missing_columns)}")
 
         self._sequence_length = sequence_length
-        self._features = df[feature_columns].to_numpy(dtype=np.float32)
-        self._labels = df[label_column].to_numpy(dtype=np.float32)
+        # Make owned writable arrays; torch.from_numpy otherwise warns for
+        # pandas' read-only views and exposes undefined write behaviour.
+        self._features = np.array(
+            df[feature_columns].to_numpy(dtype=np.float32),
+            dtype=np.float32,
+            copy=True,
+        )
+        self._labels = np.array(
+            df[label_column].to_numpy(dtype=np.float32),
+            dtype=np.float32,
+            copy=True,
+        )
         self._end_indices = self._build_valid_end_indices()
 
     def _build_valid_end_indices(self) -> np.ndarray:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import deque
 from typing import Any
 
 import numpy as np
@@ -66,6 +67,13 @@ class EnvConfig:
     initial_equity: float | None = None
     force_close_at_end: bool = True
     max_episode_steps: int | None = None
+    # Number of bars between target-exposure decisions.  A value greater than
+    # one holds the previous target between decisions, reducing costly
+    # one-bar action churn while retaining one transition per market bar.
+    rebalance_interval: int = 1
+    # Skip a rebalance when the requested notional change is smaller than
+    # this fraction of current equity.  Zero preserves the exact target.
+    min_rebalance_notional_ratio: float = 0.0
 
     def __post_init__(self) -> None:
         if self.initial_equity is not None:
@@ -81,6 +89,13 @@ class EnvConfig:
             if int(self.max_episode_steps) != self.max_episode_steps or self.max_episode_steps <= 0:
                 raise ValueError("max_episode_steps must be a positive integer")
             object.__setattr__(self, "max_episode_steps", int(self.max_episode_steps))
+        if int(self.rebalance_interval) != self.rebalance_interval or self.rebalance_interval <= 0:
+            raise ValueError("rebalance_interval must be a positive integer")
+        object.__setattr__(self, "rebalance_interval", int(self.rebalance_interval))
+        ratio = _finite(self.min_rebalance_notional_ratio, "min_rebalance_notional_ratio")
+        if ratio < 0:
+            raise ValueError("min_rebalance_notional_ratio must be non-negative")
+        object.__setattr__(self, "min_rebalance_notional_ratio", ratio)
 
     @property
     def starting_equity(self) -> float:
@@ -142,7 +157,14 @@ class TradingEnv(gym.Env):
         self._step_count = 0
         self._peak_equity = self.config.starting_equity
         self._total_reward = 0.0
+        self._target_exposure = 0.0
+        self._last_requested_exposure = 0.0
+        self._action_applied = False
         self._history: list[dict[str, Any]] = []
+        self._account_history: deque[np.ndarray] = deque(
+            maxlen=self.observation_config.account_history_length
+            or self.observation_config.window_size
+        )
         self._has_reset = False
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
@@ -159,10 +181,17 @@ class TradingEnv(gym.Env):
         self._step_count = 0
         self._peak_equity = self.config.starting_equity
         self._total_reward = 0.0
+        self._target_exposure = 0.0
+        self._last_requested_exposure = 0.0
+        self._action_applied = False
         self._history = []
+        self._account_history.clear()
         self._has_reset = True
         first_bar = self._bar(self._tick)
         self.execution.mark_to_market(first_bar.close, self.position, self.account, first_bar.timestamp, "RESET")
+        first_account_features = self._account_feature_vector()
+        for _ in range(self._account_history.maxlen or 1):
+            self._account_history.append(first_account_features.copy())
         timestamp = self.frame.iloc[self._tick]["open_time"]
         return self._observation(), self._get_info(
             None,
@@ -182,7 +211,15 @@ class TradingEnv(gym.Env):
         if self._tick >= int(self._valid_indices[-1]):
             raise RuntimeError("episode is finished; call reset() before step()")
 
-        target_exposure, clipped = self.action_adapter.coerce(action)
+        requested_exposure, clipped = self.action_adapter.coerce(action)
+        # The policy may emit an action every bar.  Execution is gated first
+        # by the optional cadence and then by the minimum notional-change
+        # threshold, so small target drift does not create fee-only trades.
+        self._last_requested_exposure = requested_exposure
+        rebalance_due = self._step_count % self.config.rebalance_interval == 0
+        self._action_applied = False
+        target_exposure = self._target_exposure
+        previous_target_exposure = self._target_exposure
         previous_equity = self.account.equity
         previous_exposure = self._current_exposure()
         next_tick = self._tick + 1
@@ -207,24 +244,43 @@ class TradingEnv(gym.Env):
             if funding.liquidated:
                 events.append(self.execution.force_liquidation(bar.open, self.position, self.account, bar.timestamp))
 
-        if not self.account.is_liquidated:
-            quantity = self.action_adapter.target_quantity(
-                target_exposure,
+        small_rebalance_skipped = False
+        requested_quantity = None
+        quantity_change_ratio = 0.0
+        if not self.account.is_liquidated and rebalance_due:
+            requested_quantity = self.action_adapter.target_quantity(
+                requested_exposure,
                 self.account.equity,
                 bar.open,
                 self.execution.cfg.contract_size,
             )
-            events.append(
-                self.execution.execute_target(
-                    quantity,
-                    bar.open,
-                    bar.open,
-                    self.position,
-                    self.account,
-                    bar.timestamp,
-                    "RL_ACTION",
+            if self.account.equity > 0:
+                quantity_change_ratio = (
+                    abs(requested_quantity - self.position.position)
+                    * bar.open
+                    * self.execution.cfg.contract_size
+                    / self.account.equity
                 )
+            self._action_applied = (
+                quantity_change_ratio + self.execution.cfg.quantity_epsilon
+                >= self.config.min_rebalance_notional_ratio
             )
+            if self._action_applied:
+                self._target_exposure = requested_exposure
+                target_exposure = requested_exposure
+                events.append(
+                    self.execution.execute_target(
+                        requested_quantity,
+                        bar.open,
+                        bar.open,
+                        self.position,
+                        self.account,
+                        bar.timestamp,
+                        "RL_ACTION",
+                    )
+                )
+            else:
+                small_rebalance_skipped = True
 
         if not self.account.is_liquidated and self.position.position != 0:
             adverse = bar.low if self.position.position > 0 else bar.high
@@ -262,9 +318,21 @@ class TradingEnv(gym.Env):
         # Keep the action exposure as the reward exposure.  It is the only
         # exposure known when the decision is made; the post-close exposure can
         # be zero after an episode-end close or liquidation.
-        exposure_during_bar = target_exposure
+        exposure_during_bar = self._current_exposure()
         actual_exposure = self._current_exposure()
         market_return = bar.close / bar.open - 1.0
+        turnover = self._turnover(events, previous_equity)
+        short_increase = 0.0
+        action_change = 0.0
+        reversal_exposure = 0.0
+        if self._action_applied:
+            short_increase = max(
+                0.0,
+                max(0.0, -target_exposure) - max(0.0, -previous_exposure),
+            )
+            action_change = abs(target_exposure - previous_target_exposure)
+            if previous_target_exposure * target_exposure < 0:
+                reversal_exposure = min(abs(previous_target_exposure), abs(target_exposure))
         breakdown = self.reward_calculator.calculate(
             previous_equity,
             self.account.equity,
@@ -272,8 +340,13 @@ class TradingEnv(gym.Env):
             market_return,
             drawdown,
             self.account.is_liquidated,
+            turnover=turnover,
+            short_increase=short_increase,
+            action_change=action_change,
+            reversal_exposure=reversal_exposure,
         )
         self._total_reward += breakdown.reward
+        self._account_history.append(self._account_feature_vector())
         terminated = self.account.is_liquidated or self._tick == int(self._valid_indices[-1])
         truncated = self.config.max_episode_steps is not None and self._step_count >= self.config.max_episode_steps and not terminated
         info = self._get_info(
@@ -281,7 +354,7 @@ class TradingEnv(gym.Env):
             target_exposure,
             breakdown.reward,
             breakdown.gross_return,
-            self._turnover(events, previous_equity),
+            turnover,
             self.account.is_liquidated,
             decision_time=self.frame.iloc[self._tick - 1]["open_time"],
             entry_time=bar.timestamp,
@@ -290,6 +363,11 @@ class TradingEnv(gym.Env):
         info.update(
             {
                 "action_was_clipped": clipped,
+                "requested_exposure": requested_exposure,
+                "rebalance_due": rebalance_due,
+                "action_applied": self._action_applied,
+                "small_rebalance_skipped": small_rebalance_skipped,
+                "quantity_change_ratio": quantity_change_ratio,
                 "previous_exposure": previous_exposure,
                 "actual_exposure": actual_exposure,
                 "exposure_during_bar": exposure_during_bar,
@@ -315,13 +393,36 @@ class TradingEnv(gym.Env):
     def _observation(self) -> np.ndarray:
         returns = self.reward_calculator.returns
         rolling_volatility = float(np.std(returns, ddof=1)) if len(returns) >= 2 else 0.0
-        account_features = {
-            "current_exposure": self._current_exposure(),
-            "equity_ratio": self.account.equity / self.config.starting_equity,
-            "drawdown": self._drawdown(),
-            "rolling_volatility": rolling_volatility,
-        }
-        return self.observation_builder.build(self._tick, account_features)
+        # Keep the latest volatility in sync even on reset or after a direct
+        # account update.  The deque stores one post-close snapshot per bar;
+        # the builder flattens the same-length history as the market window.
+        latest = self._account_feature_vector(rolling_volatility)
+        if not self._account_history:
+            for _ in range(self._account_history.maxlen or 1):
+                self._account_history.append(latest.copy())
+        else:
+            self._account_history[-1] = latest.copy()
+        return self.observation_builder.build(self._tick, tuple(self._account_history))
+
+    def _account_feature_vector(self, rolling_volatility: float | None = None) -> np.ndarray:
+        if rolling_volatility is None:
+            returns = self.reward_calculator.returns
+            rolling_volatility = float(np.std(returns, ddof=1)) if len(returns) >= 2 else 0.0
+        equity_ratio = self.account.equity / self.config.starting_equity
+        values = np.asarray(
+            [
+                self._current_exposure(),
+                equity_ratio,
+                self._drawdown(),
+                rolling_volatility,
+            ],
+            dtype=np.float64,
+        )
+        if not np.isfinite(values).all():
+            # Equity can be negative after liquidation.  Keep the observation
+            # finite so Gymnasium/PPO can consume the terminal transition.
+            values = np.nan_to_num(values, nan=0.0, posinf=self.observation_config.clip_value, neginf=-self.observation_config.clip_value)
+        return values
 
     def _drawdown(self) -> float:
         if self._peak_equity <= 0:

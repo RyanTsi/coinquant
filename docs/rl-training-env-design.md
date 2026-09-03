@@ -8,7 +8,7 @@
 
 RL agent 的输入由三部分组成：
 
-1. 最近 10 根已完成 K 线的基础行情特征；
+1. 最近 `window_size`（默认 32）根已完成 K 线的基础行情特征；
 2. 现有 fast、slow 两个 DL 模型在这些 K 线上的冻结预测特征；
 3. 当前账户和持仓状态。
 
@@ -18,10 +18,10 @@ Agent 在 bar `T` 收盘后产生一个目标暴露，环境在 bar `T+1` 开盘
 
 - 单账户、单品种、USDT 本位线性合约；
 - 单向净持仓、全仓保证金；
-- 连续动作、目标仓位一次全部调整；
+- 连续动作、按 `rebalance_interval` 周期调整目标仓位，间隔内保持上一目标；
 - 固定手续费、滑点、账户杠杆和维持保证金率；
 - fast/slow DL 模型冻结，只做推理，不在 RL 训练中更新；
-- PPO 训练，按时间顺序使用 train/valid/test 三个数据段。
+- PPO 训练，按时间顺序使用 train/valid/test 三个数据段；训练器也支持实验性的 SAC。
 
 第一版不支持：
 
@@ -134,7 +134,10 @@ fast/slow 模型的 checkpoint 必须在 RL 训练开始前固定。RL 训练过
 | `rl/action.py` | 连续动作定义、裁剪、目标暴露转换 | `ActionConfig`、`ActionAdapter` |
 | `rl/reward.py` | 收益、风险和回撤奖励 | `RewardConfig`、`RewardBreakdown`、`RewardCalculator` |
 | `rl/env.py` | Gymnasium reset/step、时间游标、交易核心协调 | `TradingEnv`、`EnvConfig` |
-| `rl/trainer.py` | 数据准备、PPO、验证、保存和评估 | `RLTrainingConfig`、`RLTrainingArtifacts`、`train_rl` |
+| `rl/trainer.py` | 数据准备、PPO/SAC、验证、保存和评估 | `RLTrainingConfig`、`RLTrainingArtifacts`、`train_rl` |
+| `rl/features.py` | 可选的 Conv1d+GRU 时序特征提取 | `TemporalFeatureExtractor` |
+| `rl/ensemble.py` | 多随机种子策略的推理集成 | `RLPolicyEnsemble`、`load_ensemble` |
+| `rl/report.py` | 将 RL ledger 与 OHLCV 对齐并生成成交标注页面 | `RLTradeReport`、`render_rl_report` |
 
 这些模块不应该导入旧的 `BacktestEngine`。报告和指标只消费环境产生的冻结 episode 记录。
 
@@ -175,7 +178,9 @@ fast/slow 模型的 checkpoint 必须在 RL 训练开始前固定。RL 训练过
 window_size * 7 + 4 = 10 * 7 + 4 = 74
 ```
 
-第一版固定返回扁平向量，以便直接接入 Stable-Baselines3 的 `MlpPolicy`；如果未来需要矩阵观测，应新增明确的 observation schema 和 policy 配置，而不是隐式改变当前维度。
+上式是本设计最初的 10-bar/标量预测基线。当前代码会在存在 `feat_*`、预测向量和预测上下文时动态扩展市场通道，并将账户状态按历史长度展开；实际维度以 `ObservationBuilder.observation_size` 为准。
+
+第一版固定返回扁平向量，以便直接接入 Stable-Baselines3 的 `MlpPolicy`。训练器可选 `TemporalFeatureExtractor` 将该扁平向量还原为市场/账户时间序列，经 Conv1d+GRU 编码后再交给 actor/critic；关闭该选项则使用普通 MLP。
 
 ### 5.2 账户状态定义
 
@@ -242,7 +247,7 @@ target_quantity = target_notional
 
 该转换发生在成交时，不能在 `T` 收盘使用未知的 `T+1` 开盘价提前计算。`target_quantity` 随后交给 `ExecutionEngine.execute_target()`，由执行核心统一处理费用、滑点、保证金、反手和强平。
 
-`max_leverage` 是 RL 暴露上限，默认不得大于账户杠杆；如果动作转换后保证金不足，环境记录拒绝或反手降级，不静默改变 agent 的动作语义。
+`max_leverage` 是 RL 目标暴露上限（目标名义价值 ÷ 当前权益），不是账户的保证金杠杆；账户/合约保证金杠杆由 `AccountConfig.leverage`（训练配置中的 `account_leverage`）决定。默认不得大于账户杠杆；如果动作转换后保证金不足，环境记录拒绝或反手降级，不静默改变 agent 的动作语义。
 
 ## 7. 环境时序与 Gymnasium API
 
@@ -268,6 +273,8 @@ target_quantity = target_notional
 5. 对 funding、盘中不利价格和收盘价执行同一套风险处理；
 6. 以 `T+1` 收盘权益与 `T` 收盘权益计算 reward；
 7. 返回 `observation_(T+1), reward, terminated, truncated, info`。
+
+当 `rebalance_interval > 1` 时，策略仍可每个 bar 输出 action，但只有调仓时点更新目标仓位并调用 `execute_target`；其余 bar 保持实际持仓，不会为了重新计算名义数量而产生重复成交。`min_rebalance_notional_ratio` 则在调仓时点进一步跳过小于权益比例阈值的名义变动；方向反转通常会自然超过该阈值。
 
 环境 step 不允许读取 `T+1` 的 high/low/close 来决定 `T+1` 开盘订单数量，也不允许把 `T+1` 的模型预测放入 `observation_T`。
 
@@ -357,6 +364,8 @@ risk_penalty = volatility_penalty
                 × rolling_volatility_T
               + position_penalty
                 × target_exposure_T²
+turnover_penalty = turnover_penalty_rate × turnover_T
+short_penalty = short_penalty_rate × newly_opened_short_exposure_T
 ```
 
 样本数不足两个时滚动波动率按 0 处理。`position_penalty` 可设置为 0；它不是交易成本，不改变账户账本。
@@ -375,8 +384,11 @@ drawdown_penalty = drawdown_penalty_rate × drawdown_T
 
 ```text
 raw_reward = base_reward - risk_penalty - drawdown_penalty
+             - turnover_penalty - short_penalty - liquidation_penalty
 reward = reward_scale × raw_reward
 ```
+
+上述扣减只在 `enable_penalties=True` 时生效；默认关闭时 `raw_reward=base_reward`。
 
 强平或权益归零时，正常 reward 仍按最后一次权益变化计算；如需额外惩罚，只能作为明确的 `liquidation_penalty` 配置，不能隐藏在交易成本中。
 
@@ -387,10 +399,15 @@ reward = reward_scale × raw_reward
 ### 9.1 `ObservationConfig`
 
 ```text
-window_size: int = 10
+window_size: int = 32
 basic_feature_columns: tuple[str, ...]
 prediction_columns: tuple[str, str] = ("prediction_fast", "prediction_slow")
 account_feature_columns: tuple[str, ...]
+account_history_length: int | None = None
+include_dl_features: bool = True
+include_prediction_vectors: bool = True
+include_prediction_context: bool = True
+dl_feature_prefix: str = "feat_"
 clip_value: float = 10.0
 normalize: bool = True
 ```
@@ -407,11 +424,14 @@ quantity_epsilon: float = 1e-12
 ```text
 reward_mode: str = "simple"       # simple 或 log
 reward_scale: float = 100.0
-drawdown_penalty_rate: float = 0.005
-volatility_penalty: float = 0.05
-position_penalty: float = 0.00002
+drawdown_penalty_rate: float = 0.0
+volatility_penalty: float = 0.0
+position_penalty: float = 0.0
+turnover_penalty_rate: float = 0.0
+short_penalty_rate: float = 0.0
 risk_window: int = 20
 liquidation_penalty: float = 0.0
+enable_penalties: bool = False
 ```
 
 ### 9.4 `EnvConfig`
@@ -422,6 +442,8 @@ execution_config: ExecutionConfig
 initial_equity: float | None = None  # None 时使用 account_config.initial_balance
 force_close_at_end: bool = True
 max_episode_steps: int | None = None
+rebalance_interval: int = 1
+min_rebalance_notional_ratio: float = 0.0
 ```
 
 `initial_equity` 只是 RL 归一化的显式别名；如果提供，必须等于 `account_config.initial_balance`，不能形成第二套账户余额来源。
@@ -431,7 +453,15 @@ max_episode_steps: int | None = None
 ```text
 symbol: str
 period: str
-window_size: int = 10
+window_size: int = 32
+account_history_length: int | None = None
+include_dl_features: bool = True
+include_prediction_vectors: bool = True
+include_prediction_context: bool = True
+dl_vector_dim: int = 8
+max_leverage: float = 0.5
+account_leverage: float = 2.0
+rebalance_interval: int = 48
 total_timesteps: int = 100_000
 eval_freq: int = 20_000
 seed: int = 59_483
@@ -545,7 +575,7 @@ balance = initial_equity + realized_pnl - total_fee - total_funding
 
 ### 12.1 观测测试
 
-- 窗口始终包含恰好最近 10 根 bar；
+- 窗口始终包含恰好最近 `window_size`（默认 32）根 bar；
 - 第一根可决策 bar 不使用未完成窗口；
 - fast/slow 预测与时间戳正确对齐；
 - 修改未来 bar 不会改变当前 observation；
@@ -559,6 +589,7 @@ balance = initial_equity + realized_pnl - total_fee - total_funding
 - 正负动作分别产生多空目标；
 - `a_T` 只能影响 `T+1` 开盘，不影响 `T` 收盘权益；
 - 目标暴露转换后的合约数量与开盘价格一致；
+- 非调仓 bar 保持上一目标仓位且不重复产生执行成交；
 - 保证金不足时不静默改变动作语义。
 
 ### 12.3 奖励测试
@@ -590,3 +621,18 @@ balance = initial_equity + realized_pnl - total_fee - total_funding
 6. 实现 PPO trainer、验证回调和产物保存；
 7. 用固定 seed 完成 train/valid/test 端到端评估；
 8. 将 RL ledger 接入独立回测报告，不重新引入 `BacktestEngine`。
+
+## 14. 当前实现补充（以代码为准）
+
+本设计最初以 10 根 K 线和两个标量 DL 预测为基线；当前实现已经扩展为：
+
+- `ObservationConfig`/`RLTrainingConfig` 默认使用 32 根行情窗口，账户状态也按同长度保存历史序列；
+- 当输入帧包含 `feat_*` 列时，观测自动纳入完整的 DL 训练特征；
+- 旧标量 checkpoint 仍兼容，同时从 Transformer 最后 GRU 状态提取可配置的 8 维向量，并生成预测变化、快慢价差、滚动均值/波动等因果上下文；
+- `include_dl_features`、`include_prediction_vectors`、`include_prediction_context` 和 `dl_vector_dim` 可用于做消融对照；
+- PPO 默认策略网络为 `256-256-128` MLP；
+- `rebalance_interval` 控制目标仓位的最小调仓间隔；默认 48 根 bar，非调仓 bar 保持上一目标且不重复执行成交；默认 `max_leverage=0.5`，`0.25` 可作为防守模式；
+- 默认 `account_leverage=2.0`（合约保证金杠杆），与目标暴露上限分别控制不同风险维度；
+- `turnover_penalty_rate` 按实际成交换手惩罚，`short_penalty_rate` 按新增空头暴露惩罚；两者与风险、回撤和强平惩罚一样保留为显式实验参数，默认由 `enable_penalties=False` 关闭，基础 reward 主要使用账户净收益。
+
+以上行为以 `src/coinquant/rl` 和 `src/coinquant/model/transformer.py` 的实现为准。
